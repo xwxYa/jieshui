@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>热水 · v12 完整流程</title>
+<style>
+  :root{
+    --primary:#8F4C38;
+    --primary-dim:#B47054;
+    --primary-lite:#C98D72;
+    --bg:#FFF8F6;
+    --surface:#FFFFFF;
+    --on-surface:#1A110F;
+    --on-surface-var:#5C4A45;
+    --outline-var:#E6D6D1;
+    --water:#5FB6E0;
+    --dark:#2B1C18;
+
+    --spring:cubic-bezier(0.34, 1.56, 0.64, 1);
+    --swipe:cubic-bezier(0.87, 0.05, 0.02, 0.97);
+    --fly:cubic-bezier(0.64, 0.08, 1, 0.97);
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent }
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:#EDE7E5; min-height:100vh; display:flex; align-items:center;
+    justify-content:center; gap:44px; padding:30px; color:var(--on-surface);
+  }
+
+  /* ═══════ 手机外壳 ═══════ */
+  .dev{
+    position:relative; width:390px; height:844px; flex:none;
+    background:#0F0A09; border-radius:46px; padding:9px;
+    box-shadow:0 24px 60px rgba(0,0,0,.24), 0 0 0 1px rgba(255,255,255,.06) inset;
+  }
+  .scr{
+    position:relative; width:100%; height:100%; background:var(--bg);
+    border-radius:38px; overflow:hidden;
+  }
+  .notch{
+    position:absolute; top:11px; left:50%; transform:translateX(-50%);
+    width:30px; height:30px; border-radius:50%; background:#0F0A09; z-index:90;
+  }
+  .sbar{
+    position:relative; z-index:2; height:44px; padding:0 26px 0 30px;
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13.5px; font-weight:600; letter-spacing:.01em;
+  }
+  .sbar .icons{ display:flex; gap:5px; align-items:center }
+
+  .page{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    background:var(--bg);
+  }
+  .page.hide{ display:none }
+
+  .appbar{ flex:none; display:flex; align-items:center; gap:6px; padding:2px 20px 14px }
+  .appbar .bk{
+    width:34px; height:34px; margin-left:-8px; display:grid; place-items:center;
+    border-radius:50%; cursor:pointer;
+  }
+  .appbar .bk svg{ width:20px; height:20px }
+  .appbar h2{ font-size:19.5px; font-weight:650; letter-spacing:-.015em }
+
+  /* ═══════════════════════════════════════════
+     接水页 · 会醒来的锁
+     ═══════════════════════════════════════════ */
+  .halo{
+    position:absolute; left:50%; top:186px; width:330px; height:330px;
+    margin-left:-165px; border-radius:50%; pointer-events:none; z-index:0;
+    background:radial-gradient(circle, rgba(143,76,56,.10) 0%, rgba(143,76,56,0) 68%);
+    opacity:.5; transform:scale(.86);
+    transition:opacity .9s linear, transform 1.1s var(--spring), background .9s linear;
+  }
+  .halo.lit{
+    opacity:1; transform:scale(1);
+    background:radial-gradient(circle, rgba(143,76,56,.20) 0%, rgba(143,76,56,0) 68%);
+  }
+
+  .stagewrap{
+    position:relative; z-index:1; flex:none;
+    width:212px; height:212px; margin:24px auto 0;
+  }
+  .ring{ position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg) }
+  .ring circle{ fill:none }
+
+  .ring .dots{
+    stroke:#D6C0BA; stroke-width:5.2; stroke-linecap:round;
+    stroke-dasharray:.5 12.745;
+    transform-origin:100px 100px;
+    animation:dotspin 22s linear infinite;
+  }
+  .stagewrap.waking .ring .dots{ animation-duration:2.2s }
+  .stagewrap.done   .ring .dots{ opacity:0; transition:opacity .45s linear }
+  @keyframes dotspin{ to{ transform:rotate(360deg) } }
+
+  .ring .prog{
+    stroke:var(--primary); stroke-width:5.5; stroke-linecap:round;
+    stroke-dasharray:0 490.09; stroke-dashoffset:0; opacity:0;
+    transition:stroke-dasharray 1.05s var(--swipe), opacity .2s linear;
+  }
+  .stagewrap.waking .ring .prog,
+  .stagewrap.done   .ring .prog{ stroke-dasharray:490.09 0; opacity:1 }
+  .stagewrap.done   .ring .prog{ transition:none }
+
+  .orbit{
+    position:absolute; inset:0; opacity:0;
+    transition:opacity .25s linear;
+  }
+  .stagewrap.waking .orbit{ opacity:1; animation:orbitSpin 1.05s var(--swipe) forwards }
+  @keyframes orbitSpin{ from{ transform:rotate(0) } to{ transform:rotate(360deg) } }
+  .orbit i{
+    position:absolute; left:50%; top:23.3px; width:11px; height:11px; margin:-5.5px 0 0 -5.5px;
+    border-radius:50%; background:var(--primary);
+    box-shadow:0 0 0 5px rgba(143,76,56,.16);
+  }
+
+  .ring .pip{
+    fill:var(--primary); opacity:0;
+    transform-box:fill-box; transform-origin:center;
+  }
+  .stagewrap.done .ring .pip{ opacity:1; animation:pip 2.6s ease-in-out infinite }
+  .stagewrap.done .ring .pip.p2{ animation-delay:.42s }
+  .stagewrap.done .ring .pip.p3{ animation-delay:.84s }
+  @keyframes pip{
+    0%,100%{ transform:scale(.7); opacity:.35 }
+    42%    { transform:scale(1.5); opacity:1 }
+    58%    { transform:scale(1.1); opacity:.8 }
+  }
+
+  /* ── 圆心那把锁 ── */
+  .core{
+    position:absolute; left:50%; top:50%; width:96px; height:116px;
+    margin:-58px 0 0 -48px; display:grid; place-items:center;
+  }
+  .lock{ width:82px; height:99px; overflow:visible }
+
+  .lock .shackle{
+    fill:none; stroke:#C3AFA9; stroke-width:7; stroke-linecap:round;
+    transform-box:view-box; transform-origin:22px 42px;
+    transition:transform .55s var(--spring), stroke .5s linear;
+  }
+  .lock .lbody{
+    fill:#C3AFA9;
+    d:path("M 38 42 C 62 42 64 44 64 63 C 64 82 62 84 38 84 C 14 84 12 82 12 63 C 12 44 14 42 38 42 Z");
+    /* 不用 --spring:它 35% 的时间就冲完 97%,变形过程根本看不见。
+       这条曲线中段慢,能看清锁"长"成水滴的那一下。 */
+    transition:fill .5s linear, d .78s cubic-bezier(.45,0,.25,1.15);
+  }
+  /* 解锁后锁体自己"长"成一颗水滴 —— 锚点数完全一致,所以能平滑插值 */
+  /* 目标形状是水滴 —— 关键是"尖要长、肚要圆"。
+     原来宽 52 / 高 60(0.87),太矮胖;现在宽 52 / 高 72(0.72),
+     并且尖的那一段从 y=18 一直收到 y=52,拉出真正的"坠形"。 */
+  .stagewrap.done .lock .lbody{
+    fill:var(--water);
+    d:path("M 38 18 C 47 46 64 54 64 68 C 64 81 52 90 38 90 C 24 90 12 81 12 68 C 12 54 29 46 38 18 Z");
+  }
+  .stagewrap.waking .lock .lbody{ fill:var(--primary) }
+  .stagewrap.waking .lock .shackle,
+  .stagewrap.done   .lock .shackle{ stroke:var(--primary) }
+
+  .lock .eyeline{
+    fill:none; stroke:#FFF8F6; stroke-width:2.6; stroke-linecap:round;
+    transition:opacity .22s linear;
+  }
+  .lock .eyedot{
+    fill:#FFF8F6; opacity:0;
+    transform-box:fill-box; transform-origin:center;
+    transition:opacity .22s linear;
+  }
+  .stagewrap.waking .lock .eyeline,
+  .stagewrap.done   .lock .eyeline{ opacity:0 }
+  .stagewrap.waking .lock .eyedot,
+  .stagewrap.done   .lock .eyedot{ opacity:1 }
+
+  .stagewrap.done .lock .lface{ animation:lockLook 4.6s ease-in-out infinite 1.2s }
+  .lface{ transform-box:view-box }
+  @keyframes lockLook{
+    0%,18%,100%{ transform:translateX(0) }
+    28%,40%    { transform:translateX(-3px) }
+    52%,64%    { transform:translateX(3px) }
+    74%        { transform:translateX(0) }
+  }
+  .stagewrap.done .lock .eyedot{
+    animation:blink .3s linear 2.2s 2, blink .3s linear 4.6s 1;
+  }
+  @keyframes blink{
+    0%,100%{ transform:scaleY(1) }
+    50%    { transform:scaleY(.12) }
+  }
+
+  .lock .mouth{
+    fill:none; stroke:#FFF8F6; stroke-width:2.6; stroke-linecap:round;
+    transition:stroke .3s linear;
+  }
+  .stagewrap.waking .lock .mouth,
+  .stagewrap.done   .lock .mouth{ d:path("M32 70 Q38 77 44 70") }
+
+  .stagewrap.waking .lock{ animation:shake .54s ease-in-out .08s 1 }
+  @keyframes shake{
+    0%,100%{ transform:translateX(0) rotate(0) }
+    18%{ transform:translateX(-2.2px) rotate(-1.6deg) }
+    40%{ transform:translateX(2.2px) rotate(1.6deg) }
+    62%{ transform:translateX(-1.4px) rotate(-1deg) }
+    82%{ transform:translateX(1px) rotate(.6deg) }
+  }
+
+  .stagewrap.done .lock{
+    animation:jelly .62s ease-in-out both,
+              breathe 2.7s ease-in-out .72s infinite;
+  }
+  @keyframes breathe{
+    0%,100%{ transform:scale(1) }
+    50%    { transform:scale(1.06) }
+  }
+  @keyframes jelly{
+    0%  { transform:scale(1,1) }
+    32% { transform:scale(.9,1.13) }
+    58% { transform:scale(1.12,.91) }
+    78% { transform:scale(.97,1.03) }
+    100%{ transform:scale(1,1) }
+  }
+  .stagewrap.done .lock .shackle{
+    transform:translate(-27px,-35px) rotate(-74deg) scale(.82);
+    opacity:0;
+    transition:transform .56s cubic-bezier(.3,1.6,.5,1) .04s,
+               opacity .24s linear .3s,
+               stroke .5s linear;
+  }
+
+  /* 爆开 —— 全部是"线",不是"圆点"。
+     彩色圆点看起来像从素材站贴进来的,因为圆环是线条语言、圆心是块面语言,
+     突然冒出一堆实心彩色圆,三者不是一个系统。
+     改成:两圈扩散的细环(延续主圆环) + 8 道放射短线(像溅起的水花)。 */
+  .burst{ position:absolute; inset:0; pointer-events:none; z-index:3 }
+
+  .burst .wave{
+    position:absolute; left:50%; top:50%;
+    width:132px; height:132px; margin:-66px 0 0 -66px;
+    border-radius:50%; border:2px solid var(--primary);
+    opacity:0;
+  }
+  .burst.go .wave{ animation:wave .92s cubic-bezier(.16,.7,.3,1) both }
+  .burst.go .wave.w2{ animation-delay:.15s; border-color:var(--water) }
+  @keyframes wave{
+    0%  { opacity:.5; transform:scale(.34) }
+    70% { opacity:.22 }
+    100%{ opacity:0;  transform:scale(1.62) }
+  }
+
+  .burst .ray{
+    position:absolute; left:50%; top:50%;
+    width:2.6px; height:24px; margin:-12px 0 0 -1.3px;
+    border-radius:2px; background:var(--water);
+    opacity:0; transform-origin:center;
+  }
+  .burst .ray:nth-child(even){ background:var(--primary-lite); height:19px; margin-top:-9.5px }
+  .burst.go .ray{ animation:ray .74s cubic-bezier(.16,.7,.3,1) var(--dl) both }
+  @keyframes ray{
+    0%  { opacity:0; transform:rotate(var(--a)) translateY(0)      scaleY(.25) }
+    22% { opacity:1; transform:rotate(var(--a)) translateY(-20px)  scaleY(1)   }
+    100%{ opacity:0; transform:rotate(var(--a)) translateY(-50px)  scaleY(.3)  }
+  }
+
+  .msg{ position:relative; z-index:1; text-align:center; padding:0 40px; margin-top:34px }
+  .msg .big{
+    font-size:20px; font-weight:650; letter-spacing:-.015em;
+    transition:color .4s linear;
+  }
+  .msg.lit .big{ color:var(--primary) }
+  .msg .sm{
+    margin-top:8px; font-size:12.5px; line-height:1.7;
+    color:var(--on-surface-var);
+  }
+  .txtswap{ position:relative; display:block; overflow:hidden }
+  .txtswap > *{
+    display:block; transition:transform .42s var(--spring), opacity .3s linear;
+  }
+  .txtswap .out{ position:absolute; inset:0; transform:translateY(0); opacity:1 }
+  .txtswap .in{ transform:translateY(100%); opacity:0 }
+  .txtswap.swapped .in{ transform:translateY(0); opacity:1 }
+  .txtswap.swapped .out{ transform:translateY(-100%); opacity:0 }
+
+  .meta{
+    position:relative; z-index:1; flex:none;
+    margin:30px 22px 0; padding-top:14px;
+    border-top:1px solid var(--outline-var);
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:12.5px; color:var(--on-surface-var);
+  }
+  .meta b{ color:var(--on-surface); font-weight:650; font-variant-numeric:tabular-nums }
+  .meta .unit{ font-size:11px; color:#9C8A84; margin-left:2px }
+
+  .foot{ flex:none; margin-top:auto; padding:14px 18px 20px; display:flex; flex-direction:column; gap:9px }
+  .btn{
+    position:relative; height:53px; border:0; border-radius:26.5px;
+    font:inherit; font-size:15.5px; font-weight:650; cursor:pointer;
+    overflow:hidden; transition:transform .3s var(--spring), background .3s linear, color .3s linear;
+  }
+  .btn.fill{ background:var(--primary); color:#fff }
+  .btn.dark{ background:var(--dark); color:#fff }
+  .btn:disabled{ background:#EDE2DF; color:#B2A29C; cursor:default }
+  .btn:not(:disabled):active{ transform:scale(.955) }
+  .btn .lb{ display:block; transition:opacity .14s linear, transform .3s var(--spring) }
+  .btn.swapping .lb{ opacity:0; transform:translateY(-6px) }
+
+  .toast{
+    position:absolute; left:50%; bottom:172px; z-index:60;
+    background:var(--dark); color:#fff; font-size:13px; font-weight:600;
+    padding:9px 18px; border-radius:999px; white-space:nowrap;
+    opacity:0; pointer-events:none;
+  }
+  .toast.on{ animation:toastPop .38s ease-in-out both }
+  @keyframes toastPop{
+    from{ opacity:0; transform:translate(-50%,7px) scale(.2,.8) }
+    60% { opacity:1; transform:translate(-50%,-1.5px) scale(1.1,1.05) }
+    to  { opacity:1; transform:translate(-50%,0) scale(1,1) }
+  }
+  .toast.off{ animation:toastFade .22s linear both }
+  @keyframes toastFade{ from{ opacity:1; transform:translate(-50%,0) } to{ opacity:0; transform:translate(-50%,3px) } }
+
+  /* ═══════════════════════════════════════════
+     设备列表页
+     ═══════════════════════════════════════════ */
+  .dlist{ flex:1; overflow-y:auto; padding:0 18px 20px }
+  .dlist::-webkit-scrollbar{ width:0 }
+  .dcard{
+    background:var(--surface); border-radius:18px; padding:15px 17px;
+    margin-bottom:10px; cursor:pointer;
+    box-shadow:0 1px 7px rgba(143,76,56,.07);
+    display:flex; align-items:center; gap:13px;
+    opacity:0; transform:translateY(10px);
+    transition:opacity .35s linear, transform .45s var(--spring);
+  }
+  .dcard.in{ opacity:1; transform:translateY(0) }
+  .dcard:active{ transform:scale(.978) }
+  .dcard .dot{
+    width:9px; height:9px; border-radius:50%; background:#4CC07A; flex:none;
+    box-shadow:0 0 0 4px rgba(76,192,122,.16);
+  }
+  .dcard .dot.off{ background:#C0B4B0; box-shadow:0 0 0 4px rgba(192,180,176,.16) }
+  .dcard .i{ flex:1; min-width:0 }
+  .dcard .i .n{ font-size:15px; font-weight:650; letter-spacing:-.01em }
+  .dcard .i .p{ margin-top:3px; font-size:12px; color:var(--on-surface-var) }
+  .dcard .arw{ color:#C9B8B2; flex:none }
+  .dcard .arw svg{ width:18px; height:18px }
+
+  /* ── 卡片扩展:点哪张卡,就从哪张卡长成整页 ──
+     不做左右推 —— 底部 tab 已经把"设备"和"订单"分成左右两区了,
+     接水页既不属于左也不属于右,它是"从设备卡片里长出来的"。 */
+  #pDev{ z-index:1 }
+  /* 接水页用 visibility 而不是 display:none —— 隐藏时仍然占着布局,
+     这样点卡片的一瞬间就能量到"信息行在哪",才能让卡片上的字飞过去。 */
+  #pWater{ z-index:2; visibility:hidden }
+  #pWater.on{ visibility:visible }
+
+  /* 就是淡入 —— 不再搞炸开和逐层落位 */
+  #pWater .stagewrap,
+  #pWater .msg,
+  #pWater .meta,
+  #pWater .foot{ transition:opacity .3s linear }
+  #pWater.entering .stagewrap,
+  #pWater.entering .msg,
+  #pWater.entering .meta,
+  #pWater.entering .foot{ opacity:0; transition:none }  /* 立即透明,不要先淡出再淡入 */
+
+  /* 卡片放大用的"替身"。
+     两个关键点,少了任一个就会出现白屏:
+     ① 底色用 --bg(暖白),不是纯白 —— 和接水页同色,长大时看不出接缝
+     ② 里面装着被点卡片的克隆,卡片上的字会淡出,不是一块空板 */
+  /* Material Design 的 Container Transform 官方参数:
+       进入 300ms · 缓动 cubic-bezier(0.4, 0.0, 0.2, 1)
+       新内容在进度 0~25% 之间淡入(300ms × 25% = 75ms) */
+  .magic{
+    position:absolute; z-index:70; display:none; overflow:hidden;
+    background:var(--surface); pointer-events:none;
+    box-shadow:0 1px 7px rgba(143,76,56,.09);
+    transition:left .3s cubic-bezier(.4,0,.2,1),
+               top .3s cubic-bezier(.4,0,.2,1),
+               width .3s cubic-bezier(.4,0,.2,1),
+               height .3s cubic-bezier(.4,0,.2,1),
+               border-radius .3s cubic-bezier(.4,0,.2,1),
+               box-shadow .3s cubic-bezier(.4,0,.2,1),
+               opacity .16s linear;
+  }
+  /* 遮罩:纯黑 32%(#52000000)。少这一层,容器放大时和背景糊在一起 */
+  .scrim{
+    position:absolute; inset:0; z-index:69; background:#000;
+    opacity:0; pointer-events:none;
+    transition:opacity .25s cubic-bezier(.4,0,.2,1);
+  }
+  /* 克隆进来的卡片:去掉它自己那份入场动画和卡片外观 */
+  #magic .dcard{
+    opacity:1; transform:none; margin:0;
+    background:transparent; box-shadow:none;
+    transition:opacity .08s linear;   /* 0~25% 进度 = 75ms 内让位 */
+  }
+
+  /* ── 底部 tab:左设备 / 右订单 ── */
+  .tabbar{
+    flex:none; display:flex; background:var(--surface);
+    border-top:1px solid var(--outline-var); padding:7px 0 14px;
+  }
+  .tb{
+    flex:1; border:0; background:none; font:inherit; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    color:#AD9C96; font-size:10.5px; font-weight:650; letter-spacing:.02em;
+    transition:color .2s linear, transform .3s var(--spring);
+  }
+  .tb.on{ color:var(--primary) }
+  .tb:active{ transform:scale(.92) }
+  .tb svg{ width:22px; height:22px }
+
+  .oempty{
+    flex:1; display:grid; place-items:center; text-align:center;
+    color:#B3A39D; font-size:13px; line-height:1.8;
+  }
+
+  /* ═══════════════════════════════════════════
+     订单页 · 方案 C：把订单串成一条时间
+     ═══════════════════════════════════════════ */
+  #pOrder{ z-index:1 }
+  .obody{ flex:1; overflow-y:auto; padding:0 18px 16px }
+  .obody::-webkit-scrollbar{ width:0 }
+
+  /* 金额：逐位落下（挤压滑窗，yui540 的手法⑤） */
+  .osum{ padding-top:2px }
+  .oamt{ display:flex; align-items:baseline }
+  .ocur{ font-size:20px; font-weight:650; color:#A08E88; margin-right:3px }
+  .onum{ display:flex; align-items:flex-start; height:42px; overflow:hidden }
+  .onum > i{ display:block; height:42px; font-style:normal; font-size:34px; font-weight:700;
+             line-height:42px; letter-spacing:-.6px; overflow:hidden;
+             font-variant-numeric:tabular-nums }
+  .onum > i > u{ display:block; text-decoration:none; transform:translateY(0) }
+  .osub{ margin-top:1px; font-size:11.5px; color:#A08E88 }
+
+  /* 7 天柱 */
+  .obars{ display:flex; align-items:flex-end; gap:5px; height:24px; margin-top:10px }
+  .obars > i{ display:block; width:5px; height:24px; border-radius:3px; background:#E2D3CE;
+              transform:scaleY(var(--h)); transform-origin:bottom }
+  .obars > i.hi{ background:var(--primary) }
+
+  /* 时间轴。行自己带左内边距 —— 不靠父元素缩进，
+     因为点开时这一行要被克隆进魔板，必须在哪里都长得一样。 */
+  .tl{ position:relative; margin-top:12px }
+  /* left 是相对 .tl 的边框盒算的。左右那 18px 内边距在 .obody 上，
+     不在 .tl 上 —— 所以这里是 12px，不是 30px（30-18）。
+     写成 30px 的话竖线会跑到文字里面去。 */
+  .tl .spine{ position:absolute; left:12px; top:2px; bottom:10px; width:1.5px;
+              background:#E8D5D0; transform:scaleY(1); transform-origin:top }
+  .odate{ position:relative; padding:11px 0 5px 26px; font-size:11.5px; font-weight:650;
+          color:var(--primary) }
+  .odate > i{ position:absolute; left:7px; top:14px; width:11px; height:11px;
+              border-radius:50%; background:var(--primary); transform:scale(1) }
+  .orow{ display:flex; justify-content:space-between; gap:10px; align-items:baseline;
+         padding:9px 0 9px 26px; border-bottom:1px solid #F3E7E3 }
+  .orow:last-child{ border-bottom:0 }
+  .orow b{ font-weight:620; font-size:13.5px }
+  .orow small{ color:#A08E88; font-size:11px; margin-left:6px }
+  .orow em{ font-style:normal; font-weight:700; font-size:13.5px; color:var(--primary);
+            white-space:nowrap; font-variant-numeric:tabular-nums }
+
+  /* 播放用 animation，不用 transition。
+     理由：终态就是元素本来的样子，所以页面一打开就是成品，
+     点 tab 过去才从起点重演一遍。transition 做不到 —— 它的"初始态"必然不是终态，
+     结果就是"没播放 = 一片空白"。 */
+  #pOrder.play .onum > i > u{ animation:oLand .52s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .obars > i{ animation:oGrow .46s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .tl .spine{ animation:oDraw 1s var(--swipe) both }
+  #pOrder.play .odate > i{ animation:oPop .4s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .orow{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+
+  @keyframes oLand{ from{ transform:translateY(-104%) } }
+  @keyframes oGrow{ from{ transform:scaleY(0) } }
+  @keyframes oRow { from{ opacity:0; transform:translateY(9px) } }
+  @keyframes oPop { from{ transform:scale(0) } }
+  @keyframes oDraw{ from{ transform:scaleY(0) } }
+
+  /* 被详情页盖住时用 visibility，不能用 display:none ——
+     display 再切回来会让整页动画重新播一遍。 */
+  #pOrder.cov{ visibility:hidden }
+
+  /* ── 空状态：睡觉的水滴 ── */
+  .oempty{ flex:1; display:none; flex-direction:column; align-items:center;
+           justify-content:center; gap:16px }
+  #pOrder.empty .obody{ display:none }
+  #pOrder.empty .oempty{ display:flex }
+  .odrop{ width:76px; height:100px; overflow:visible; cursor:pointer }
+  .odrop:not(.wake){ animation:oBreathe 3.4s ease-in-out infinite }
+  .odrop .oskin{ fill:#DCCCC7; transition:fill .4s linear }
+  .odrop .eyel{ opacity:1; transition:opacity .12s linear }
+  .odrop .eyedot{ opacity:0; transform-box:fill-box; transform-origin:center }
+  .odrop.wake{ animation:oSquash .62s var(--spring) }
+  .odrop.wake .oskin{ fill:var(--primary-lite) }
+  .odrop.wake .eyel{ opacity:0 }
+  .odrop.wake .eyedot{ opacity:1; animation:oBlink .34s linear 2 }
+  @keyframes oBreathe{ 0%,100%{ transform:scale(1) } 50%{ transform:scale(1.035) } }
+  @keyframes oBlink{ 0%,100%{ transform:scaleY(1) } 50%{ transform:scaleY(.08) } }
+  @keyframes oSquash{ 0%{ transform:scale(1) } 48%{ transform:scale(.95,1.15) }
+                      74%{ transform:scale(1.14,.96) } 100%{ transform:scale(1) } }
+  .ohint{ font-size:12.5px; color:#B3A39D }
+
+  /* ═══════════════════════════════════════════
+     登录页
+     ═══════════════════════════════════════════ */
+  #pLogin{ z-index:5; transition:opacity .3s linear }
+  #pLogin.gone{ opacity:0; pointer-events:none }
+  /* 内容自己在剩下的空间里居中。不能给整页加 justify-content:center ——
+     那会把系统状态栏也一起拽下来。状态栏是屏幕画的，它必须贴顶。 */
+  .lwrap{ flex:1; display:flex; flex-direction:column; justify-content:center;
+          padding:0 30px 40px }
+  .plogo{ width:66px; height:66px; margin:0 auto 24px; display:block }
+  .plogo .tip{ fill:var(--primary); transform-box:fill-box; transform-origin:bottom }
+  .plogo.pop .tip{ animation:oSquash .62s var(--spring) }
+  .ptitle{ font-size:22px; font-weight:700; text-align:center; letter-spacing:-.02em }
+  .psub{ font-size:12.5px; color:#A08E88; text-align:center; margin-top:7px; line-height:1.7 }
+  .pform{ margin-top:28px; display:flex; flex-direction:column; gap:10px }
+  .pfield{ background:var(--surface); border-radius:14px; padding:12px 16px;
+           box-shadow:0 1px 6px rgba(143,76,56,.06) }
+  .pfield .lbl{ font-size:10.5px; color:#B3A39D }
+  .pfield input{ display:block; width:100%; border:0; background:none; padding:0; margin-top:2px;
+                 font:inherit; font-size:14px; font-weight:600; color:var(--on-surface);
+                 letter-spacing:.01em; outline:none }
+  .pfield .crow{ display:flex; align-items:center; gap:10px }
+  .sendbtn{ flex:none; border:0; background:none; font:inherit; font-size:12.5px;
+            font-weight:650; color:var(--primary); cursor:pointer;
+            padding:2px 0 2px 10px; white-space:nowrap }
+  .sendbtn:disabled{ color:#C4B4AE; cursor:default }
+  .pform .btn{ margin-top:6px }
+  .plegal{ margin-top:18px; font-size:10.5px; color:#C4B4AE; text-align:center; line-height:1.8 }
+
+  /* ═══════════════════════════════════════════
+     扫码加设备
+     ═══════════════════════════════════════════ */
+  /* 扫码页和接水页/汇总页用同一条动画：从按下去的那个元素长成整页。
+     这里源头是右上角那个 34px 的「+」。
+     不做"从底下滑上来的相机卡片" —— 它不是另一个页面，它就是那个按钮的展开。 */
+  #pScan{ z-index:4; visibility:hidden }
+  #pScan.on{ visibility:visible }
+  #pScan .appbar,
+  #pScan .scanwrap,
+  #pScan .foot{ transition:opacity .3s linear }
+  #pScan.entering .appbar,
+  #pScan.entering .scanwrap,
+  #pScan.entering .foot{ opacity:0; transition:none }
+  .appbar .sp{ flex:1 }
+  .ib{ width:34px; height:34px; margin-right:-6px; display:grid; place-items:center;
+       border-radius:50%; cursor:pointer; color:var(--primary) }
+  .ib svg{ width:21px; height:21px }
+  .ib:active{ transform:scale(.9) }
+
+  .scanwrap{ flex:1; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; gap:20px }
+  .vf{ position:relative; width:208px; height:208px; border-radius:24px; background:#F4EBE8 }
+  .vf .c{ position:absolute; width:26px; height:26px; border:3px solid var(--primary); border-radius:7px }
+  .vf .c.tl{ left:15px; top:15px;    border-right:0; border-bottom:0 }
+  .vf .c.tr{ right:15px; top:15px;   border-left:0;  border-bottom:0 }
+  .vf .c.bl{ left:15px; bottom:15px; border-right:0; border-top:0 }
+  .vf .c.br{ right:15px; bottom:15px;border-left:0;  border-top:0 }
+  .vf .sline{ position:absolute; left:22px; right:22px; top:22px; height:2px;
+              border-radius:2px; background:var(--primary); opacity:.85;
+              animation:sweep 1.9s ease-in-out infinite;
+              transition:opacity .2s linear }
+  @keyframes sweep{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(162px) } }
+  #pScan.done .vf .sline{ animation:none; opacity:0 }
+  .vf .qrmark{ position:absolute; inset:0; display:grid; place-items:center; opacity:.16;
+               color:var(--primary); font-size:11px; font-weight:650; letter-spacing:.12em }
+  .shint{ font-size:12.5px; color:#A08E88; text-align:center; line-height:1.8 }
+
+  .sfound{ flex:none; padding:0 20px 6px; opacity:0; transform:translateY(14px);
+           pointer-events:none;
+           transition:opacity .3s linear, transform .46s var(--spring) }
+  #pScan.done .sfound{ opacity:1; transform:none; pointer-events:auto }
+  .sf{ background:var(--surface); border-radius:16px; padding:14px 16px; margin-bottom:10px;
+       box-shadow:0 1px 7px rgba(143,76,56,.07);
+       display:flex; align-items:center; gap:12px }
+  .sf .dot{ width:9px; height:9px; border-radius:50%; background:#4CC07A; flex:none;
+            box-shadow:0 0 0 4px rgba(76,192,122,.16) }
+  .sf .i{ flex:1; min-width:0 }
+  .sf .i .n{ font-size:14.5px; font-weight:650 }
+  .sf .i .p{ margin-top:3px; font-size:11.5px; color:var(--on-surface-var) }
+  #pScan .foot{ padding-bottom:22px }
+  /* .btn 是 inline-block，不拉通栏的话宽度只有文字那么宽 ——
+     而它是个 26.5px 圆角的胶囊，圆角会把首尾两个字切掉。 */
+  .sfound .btn{ display:block; width:100% }
+
+  /* ═══════════════════════════════════════════
+     消费汇总
+     ═══════════════════════════════════════════ */
+  #pSummary{ z-index:2; visibility:hidden }
+  #pSummary.on{ visibility:visible }
+  #pSummary .appbar, #pSummary .swrap{ transition:opacity .3s linear }
+  #pSummary.entering .appbar, #pSummary.entering .swrap{ opacity:0; transition:none }
+  .swrap{ flex:1; overflow-y:auto; padding:2px 20px 24px }
+  .swrap::-webkit-scrollbar{ width:0 }
+  .snum{ font-size:34px; font-weight:700; letter-spacing:-.03em;
+         font-variant-numeric:tabular-nums }
+  .snum small{ font-size:15px; font-weight:650; color:#A08E88; margin-right:3px }
+  .slab{ font-size:11.5px; color:#A08E88; margin-top:2px }
+  .scards{ display:flex; gap:10px; margin-top:15px }
+  .scards .sc{ flex:1; background:var(--surface); border-radius:15px; padding:12px 14px;
+               box-shadow:0 1px 6px rgba(143,76,56,.06) }
+  .scards .sc .k{ font-size:10.5px; color:#B3A39D }
+  .scards .sc .v{ margin-top:4px; font-size:17px; font-weight:700;
+                  font-variant-numeric:tabular-nums }
+  /* 设备名比数字长得多，挤在三分之一宽里会被折成两行 —— 给它一整行 */
+  .scards .sc.wide{ display:flex; align-items:baseline; justify-content:space-between; gap:12px }
+  .scards .sc.wide .v{ margin-top:0; font-size:15px }
+  .sblock{ margin-top:24px }
+  .sblock h4{ font-size:11.5px; font-weight:650; color:#A08E88; margin-bottom:12px }
+  .sblock h4 em{ font-style:normal; color:#C4B4AE; font-weight:600; margin-left:5px }
+  .mbars{ display:flex; align-items:flex-end; gap:9px; height:76px }
+  .mbars > i{ flex:1; height:76px; background:#E2D3CE; border-radius:5px 5px 3px 3px;
+              transform:scaleY(var(--h)); transform-origin:bottom }
+  .mbars > i.hi{ background:var(--primary) }
+  .mlabs{ display:flex; gap:9px; margin-top:7px }
+  .mlabs > span{ flex:1; text-align:center; font-size:10px; color:#B3A39D }
+  .rrow{ padding:10px 0 12px; border-bottom:1px solid #F6ECE9 }
+  .rrow:last-child{ border-bottom:0 }
+  .rrow .r1{ display:flex; justify-content:space-between; align-items:baseline; gap:12px }
+  .rrow .rn{ font-size:13px; font-weight:620 }
+  .rrow .rv{ font-size:13px; font-weight:700; color:var(--primary);
+             font-variant-numeric:tabular-nums }
+  .rrow .rbar{ margin-top:8px; height:6px; border-radius:3px; background:#F1E4E0; overflow:hidden }
+  .rrow .rbar > i{ display:block; height:100%; border-radius:3px; background:var(--primary-dim);
+                   transform:scaleX(var(--w)); transform-origin:left }
+  .rrow .r2{ margin-top:6px; font-size:10.5px; color:#B3A39D }
+
+  /* 汇总页的入场：终态就是默认样子，加 .play 才重演 */
+  #pSummary.play .scards .sc{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .mbars > i{ animation:oGrow .46s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .rrow{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .rrow .rbar > i{ animation:oDrawH .55s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .snum > i > u{ animation:oLand .52s var(--spring) both; animation-delay:var(--dl) }
+  .onum.tight{ height:42px }
+
+  /* ═══════════════════════════════════════════
+     右侧：流程指示板
+     ═══════════════════════════════════════════ */
+  .flow{ width:352px; flex:none; font-size:13px; line-height:1.75; color:#4A3B37 }
+  .flow h1{ font-size:18px; margin-bottom:5px; letter-spacing:-.01em }
+  .flow .sub{ font-size:12px; color:#8A7873; margin-bottom:16px; line-height:1.7 }
+  .flow .steps{ list-style:none; counter-reset:s }
+  .flow .steps li{ position:relative; display:flex; gap:10px; align-items:flex-start;
+                   padding:7px 0 7px 4px; border-radius:9px; transition:background .25s linear }
+  .flow .steps li .n{ flex:none; width:20px; height:20px; border-radius:50%; margin-top:2px;
+                      display:grid; place-items:center; font-size:10.5px; font-weight:700;
+                      background:#fff; color:#B3A39D; box-shadow:0 1px 3px rgba(0,0,0,.07);
+                      transition:background .25s linear, color .25s linear, transform .3s var(--spring) }
+  .flow .steps li .t{ flex:1; min-width:0 }
+  .flow .steps li .t b{ display:block; font-size:13px; font-weight:620; color:#9C8A84;
+                        transition:color .25s linear }
+  .flow .steps li .t span{ display:block; font-size:11.5px; color:#B9AAA5 }
+  .flow .steps li.on{ background:#fff; box-shadow:0 2px 10px rgba(143,76,56,.09) }
+  .flow .steps li.on .n{ background:var(--primary); color:#fff; transform:scale(1.12) }
+  .flow .steps li.on .t b{ color:var(--on-surface) }
+  .flow .steps li.on .t span{ color:#8A7873 }
+  .flow .fbtns{ margin-top:16px; display:flex; gap:9px }
+  .flow .fbtns button{ flex:1; font:inherit; font-size:13px; font-weight:650; cursor:pointer;
+                       border:0; border-radius:11px; padding:11px 0;
+                       background:var(--primary); color:#fff;
+                       transition:transform .3s var(--spring) }
+  .flow .fbtns button.sec{ background:#fff; color:var(--primary);
+                           box-shadow:0 1px 5px rgba(143,76,56,.1) }
+  .flow .fbtns button:active{ transform:scale(.96) }
+  .flow .fbtns button.busy{ background:var(--dark) }
+  .flow .tip{ margin-top:16px; padding:13px 15px; background:#fff; border-radius:12px;
+              font-size:12px; line-height:1.72; box-shadow:0 2px 10px rgba(143,76,56,.07) }
+  .flow code{ background:#F6EEEB; padding:1px 5px; border-radius:4px; font-size:11.5px;
+              color:#8F4C38 }
+  .flow .mini{ font:inherit; font-size:12px; font-weight:650; cursor:pointer; border:0;
+               border-radius:9px; padding:7px 14px; margin-top:9px;
+               background:#F1E4E0; color:#8F4C38 }
+
+  .notes{ width:330px; flex:none; font-size:13px; line-height:1.75; color:#4A3B37 }
+  .notes h1{ font-size:18px; margin-bottom:4px; letter-spacing:-.01em }
+  .notes .sub{ font-size:12px; color:#8A7873; margin-bottom:18px }
+  .notes h3{
+    font-size:11.5px; letter-spacing:.09em; color:#A08B85;
+    margin:18px 0 7px; text-transform:uppercase;
+  }
+  .notes .kv{ display:flex; gap:9px; margin-bottom:9px; align-items:flex-start }
+  .notes .kv .k{
+    flex:none; width:42px; text-align:center; font-size:10.5px; font-weight:700;
+    background:#fff; border-radius:7px; padding:2px 0; color:var(--primary);
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .notes .kv .v{ flex:1; font-size:12.5px; color:#5C4A45 }
+  .notes code{
+    background:#fff; padding:1px 5px; border-radius:4px; font-size:11.5px;
+    color:#8F4C38; box-shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  .notes .tip{
+    margin-top:20px; padding:13px 15px; background:#fff; border-radius:12px;
+    font-size:12px; line-height:1.7; box-shadow:0 2px 10px rgba(143,76,56,.07);
+  }
+</style>
+</head>
+<body>
+
+<div class="dev">
+  <div class="notch"></div>
+  <div class="scr">
+
+    <!-- ══════ 设备列表 ══════ -->
+    <div class="page" id="pDev">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar"><h2 style="margin-left:2px">设备</h2><span class="sp"></span>
+        <div class="ib" id="bAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+      </div>
+      <div class="dlist" id="dlist">
+        <div class="dcard" data-d="0">
+          <span class="dot"></span>
+          <div class="i"><div class="n">1号楼西热水</div><div class="p">0.011 元/100mL · 空闲</div></div>
+          <span class="arw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+        </div>
+        <div class="dcard" data-d="1">
+          <span class="dot off"></span>
+          <div class="i"><div class="n">2号楼东热水</div><div class="p">0.011 元/100mL · 离线</div></div>
+          <span class="arw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
+        </div>
+      </div>
+      <div class="tabbar">
+        <button class="tb on" data-t="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2c0 0 6 6.6 6 10.3a6 6 0 1 1-12 0c0-3.7 6-10.3 6-10.3z"/></svg><span>设备</span></button>
+        <button class="tb" data-t="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8.5 8.5h7M8.5 12.5h7M8.5 16.5h4"/></svg><span>订单</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 订单页 · 方案 C 时间轴 ══════ -->
+    <div class="page hide" id="pOrder">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar"><h2 style="margin-left:2px">订单</h2></div>
+
+      <div class="obody">
+        <div class="osum">
+          <div class="oamt"><span class="ocur">&yen;</span><span class="onum" id="oNum"></span></div>
+          <div class="osub" id="oSub">本月 · 7 天 · 0 单</div>
+          <div class="obars" id="oBars"></div>
+        </div>
+        <div class="tl" id="oTl"></div>
+      </div>
+
+      <div class="oempty">
+        <svg class="odrop" id="oDrop" viewBox="0 0 76 100">
+          <path class="oskin" d="M 38 6 C 46 32 68 44 68 62 C 68 82 54 94 38 94 C 22 94 8 82 8 62 C 8 44 30 32 38 6 Z"/>
+          <path class="eyel" d="M24 66 h9 M43 66 h9" fill="none" stroke="#B7A29C" stroke-width="2.6" stroke-linecap="round"/>
+          <circle class="eyedot" cx="28.5" cy="66" r="3.4" fill="#7E6C66"/>
+          <circle class="eyedot" cx="47.5" cy="66" r="3.4" fill="#7E6C66"/>
+        </svg>
+        <div class="ohint">&hellip;还没接过水</div>
+      </div>
+
+      <div class="tabbar">
+        <button class="tb on" data-t="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2c0 0 6 6.6 6 10.3a6 6 0 1 1-12 0c0-3.7 6-10.3 6-10.3z"/></svg><span>设备</span></button>
+        <button class="tb" data-t="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8.5 8.5h7M8.5 12.5h7M8.5 16.5h4"/></svg><span>订单</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 接水页 ══════ -->
+    <div class="page" id="pWater">
+      <div class="halo" id="halo"></div>
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar">
+        <div class="bk" id="bk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <h2>接水</h2>
+      </div>
+
+      <div class="stagewrap" id="wrap">
+        <svg class="ring" viewBox="0 0 200 200">
+          <circle class="dots" cx="100" cy="100" r="78"/>
+          <circle class="prog" cx="100" cy="100" r="78"/>
+          <circle class="pip p1" cx="100" cy="22"  r="4"/>
+          <circle class="pip p2" cx="167.5" cy="139" r="4"/>
+          <circle class="pip p3" cx="32.5"  cy="139" r="4"/>
+        </svg>
+        <div class="orbit"><i></i></div>
+
+        <div class="core">
+          <svg class="lock" viewBox="0 0 76 92">
+            <path class="shackle" d="M22 42 V26 A16 16 0 0 1 54 26 V42"/>
+            <path class="lbody" d="M 38 42 C 62 42 64 44 64 63 C 64 82 62 84 38 84 C 14 84 12 82 12 63 C 12 44 14 42 38 42 Z"/>
+            <g class="lface">
+              <path class="eyeline" d="M27 62 Q31.5 57.6 36 62"/>
+              <path class="eyeline" d="M40 62 Q44.5 57.6 49 62"/>
+              <circle class="eyedot" cx="31.5" cy="61" r="3.7"/>
+              <circle class="eyedot" cx="44.5" cy="61" r="3.7"/>
+              <path class="mouth" d="M33 72 Q38 72 43 72"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="burst" id="burst">
+          <span class="wave w1"></span>
+          <span class="wave w2"></span>
+          <span class="ray"></span><span class="ray"></span><span class="ray"></span><span class="ray"></span>
+          <span class="ray"></span><span class="ray"></span><span class="ray"></span><span class="ray"></span>
+        </div>
+      </div>
+
+      <div class="msg" id="msg">
+        <div class="big" id="mBig">设备已锁定</div>
+        <div class="sm" id="mSm">解锁后机器上的按钮才会生效,解锁本身不扣费</div>
+      </div>
+
+      <div class="meta">
+        <span id="mDev">1号楼西热水</span>
+        <span><b>0.011</b><span class="unit">元/100mL</span></span>
+      </div>
+
+      <div class="foot">
+        <button class="btn fill" id="bUnlock"><span class="lb">解锁设备</span></button>
+        <button class="btn dark" id="bEnd" disabled><span class="lb">结束接水</span></button>
+      </div>
+
+    </div>
+
+    <!-- ══════ 登录 ══════ -->
+    <div class="page" id="pLogin">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="lwrap">
+        <svg class="plogo" id="plogo" viewBox="0 0 76 100">
+          <path class="tip" d="M 38 6 C 46 32 68 44 68 62 C 68 82 54 94 38 94 C 22 94 8 82 8 62 C 8 44 30 32 38 6 Z"/>
+        </svg>
+        <div class="ptitle">热水</div>
+        <div class="psub">校园直饮水 · 扫码即用<br>不预存、不办卡，接多少算多少</div>
+        <div class="pform">
+          <label class="pfield"><span class="lbl">手机号</span>
+            <input id="iPhone" value="13800001234" inputmode="numeric"></label>
+          <label class="pfield"><span class="lbl">验证码</span>
+            <span class="crow">
+              <input id="iCode" inputmode="numeric" placeholder="6 位数字">
+              <button class="sendbtn" id="bSend" type="button">发送验证码</button>
+            </span></label>
+          <button class="btn fill" id="bLogin"><span class="lb">登 录</span></button>
+        </div>
+        <div class="plegal">登录即表示同意「用户协议」和「隐私政策」<br>这只是一个原型，不会真的联网</div>
+      </div>
+    </div>
+
+    <!-- ══════ 扫码加设备 ══════ -->
+    <div class="page" id="pScan">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar"><h2 style="margin-left:2px">添加设备</h2></div>
+      <div class="scanwrap">
+        <div class="vf">
+          <span class="c tl"></span><span class="c tr"></span>
+          <span class="c bl"></span><span class="c br"></span>
+          <span class="qrmark">QR</span>
+          <span class="sline"></span>
+        </div>
+        <div class="shint">把机器上的二维码放进取景框</div>
+      </div>
+      <div class="sfound">
+        <div class="sf">
+          <span class="dot"></span>
+          <div class="i"><div class="n">1号楼南热水</div>
+            <div class="p">0.011 元/100mL · 空闲</div></div>
+        </div>
+        <button class="btn fill" id="bAddDev"><span class="lb">添加这台设备</span></button>
+      </div>
+      <div class="foot">
+        <button class="btn dark" id="bScanBack"><span class="lb">取消</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 消费汇总 ══════ -->
+    <div class="page" id="pSummary">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar">
+        <div class="bk" id="bkS"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <h2>消费汇总</h2>
+      </div>
+      <div class="swrap">
+        <div class="snum"><small>&yen;</small><span class="onum tight" id="sNum"></span></div>
+        <div class="slab">本月总支出</div>
+        <div class="scards">
+          <div class="sc" style="--dl:120ms"><div class="k">接水次数</div><div class="v" id="sCnt">&mdash;</div></div>
+          <div class="sc" style="--dl:190ms"><div class="k">平均每次</div><div class="v" id="sAvg">&mdash;</div></div>
+        </div>
+        <div class="scards" style="margin-top:10px">
+          <div class="sc wide" style="--dl:260ms"><div class="k">最常去的设备</div>
+            <div class="v" id="sTop">&mdash;</div></div>
+        </div>
+        <div class="sblock">
+          <h4>近 6 个月<em>示例数据</em></h4>
+          <div class="mbars" id="mBars"></div>
+          <div class="mlabs" id="mLabs"></div>
+        </div>
+        <div class="sblock">
+          <h4>按设备</h4>
+          <div id="sRank"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提示条放在最外层 —— 它得在任何一页上都看得见,不能被某一页藏起来 -->
+    <div class="toast" id="toast"></div>
+
+    <!-- 卡片放大用的替身,和它下面那层遮罩 -->
+    <div class="scrim" id="scrim"></div>
+    <div class="magic" id="magic"></div>
+
+  </div>
+</div>
+
+<!-- ══════ 说明板 ══════ -->
+<div class="flow">
+  <h1>完整流程 demo</h1>
+  <div class="sub">从登录一路点到消费汇总。<br>也可以按下面的「自动演一遍」，看它自己走完六个步骤 —— 中途你碰一下手机就会停。</div>
+  <ol class="steps" id="steps"></ol>
+  <div class="fbtns">
+    <button id="bAuto">自动演一遍</button>
+    <button id="bReset" class="sec">重来</button>
+  </div>
+  <div class="tip">
+    <strong>看的时候注意这几处：</strong><br>
+    · 设备卡片是<strong>错落进场</strong>的（每张差 90ms），不是一起出现<br>
+    · 右上的「+」、设备卡片、金额块，点下去都是<strong>从那一个元素本身长成整页</strong>；背景同时压暗 32%<br>
+    · 登录页在发验证码：点「发送验证码」会看到 60 秒倒计时，演示里约 1 秒后码会自动填上<br>
+    · 订单页<strong>没有详情页</strong>了，那一行点了没反应 —— 结果已经在行上写完了<br>
+    · 汇总页的数字<strong>全部从订单明细算出来</strong>，不是另写一套假数字
+  </div>
+  <div class="tip">
+    <strong>空状态：</strong>没有订单时是那只睡觉的水滴。<br>
+    <button class="mini" id="demoEmpty">看空状态</button>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ══════════════ 提示条 ══════════════ */
+function toast(text){
+  const t = $('toast');
+  t.textContent = text;
+  t.classList.remove('on','off');
+  void t.offsetWidth;
+  t.classList.add('on');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => {
+    t.classList.remove('on');
+    t.classList.add('off');
+  }, 1750);
+}
+
+/* ══════════════ 设备列表 ══════════════ */
+const DEV = [
+  { name:'1号楼西热水', off:false },
+  { name:'2号楼东热水', off:true  }
+];
+let curDev = 0;
+
+document.querySelectorAll('.dcard').forEach(c => {
+  c.addEventListener('click', () => openWater(+c.dataset.d));
+});
+/* 卡片的错落入场不在这里播 —— 等登录之后再播，否则用户在登录页时它已经演完了 */
+
+/* ══════════════ 卡片扩展 ══════════════ */
+/* 不做左右推 —— 底部 tab 已经把"设备"和"订单"分成左右两区,
+   接水页既不属于左也不属于右,它是"从设备卡片里长出来的"。
+   做法:放一个白色替身 .magic 精确盖住被点的卡片,再让它长到整页大小;
+   长到 84% 时切换页面,最后让替身淡出 —— 因为两层都是白的,接缝看不出来。 */
+const scrEl = document.querySelector('.scr');
+let originRect = null;
+let lastCard   = null;
+
+function rectIn(sel){
+  const sc = scrEl.getBoundingClientRect();
+  const r  = sel.getBoundingClientRect();
+  return { left: r.left - sc.left, top: r.top - sc.top, w: r.width, h: r.height };
+}
+
+let originRadius = 18;
+
+function expandFrom(card, onCovered, enteringId, panelBg, radius){
+  originRadius = (radius === undefined) ? 18 : radius;
+  const sc = scrEl.getBoundingClientRect();
+  const o  = rectIn(card);
+  originRect = o;
+  const m = $('magic');
+
+  /* 1) 无过渡地摆到卡片位置,并把卡片克隆进来 */
+  m.innerHTML = '';
+  m.appendChild(card.cloneNode(true));
+
+  m.style.transition = 'none';
+  m.style.display = 'block';
+  m.style.opacity = '1';
+  m.style.left = o.left + 'px';  m.style.top = o.top + 'px';
+  m.style.width = o.w + 'px';    m.style.height = o.h + 'px';
+  m.style.borderRadius = originRadius + 'px';
+  m.style.boxShadow = '0 1px 7px rgba(143,76,56,.09)';
+  /* 魔板的底色要跟"被点的东西"周围一致，不然会长出一块颜色不对的方块 */
+  m.style.background = panelBg || 'var(--surface)';
+  m.dataset.from = JSON.stringify(o);        /* 留个底,便于校验 */
+  void m.offsetWidth;                       /* 强制回流,否则下一帧的改动会被合并掉 */
+
+  /* 2) 再让它长到整页 */
+  m.style.transition = '';
+  requestAnimationFrame(() => {
+    m.style.left = '0px';  m.style.top = '0px';
+    m.style.width = sc.width + 'px';  m.style.height = sc.height + 'px';
+    m.style.borderRadius = '0px';
+    m.style.boxShadow = '0 1px 7px rgba(143,76,56,0)';   /* 影子化开 */
+    $('scrim').style.opacity = '.32';                    /* 背景压暗 32% */
+    const cl = m.firstElementChild;
+    if(cl) cl.style.opacity = '0';
+  });
+
+  /* 300ms 形状走完 → 切页 → 新页内容淡入 */
+  if(enteringId) setTimeout(() => { $(enteringId).classList.remove('entering') }, 300);
+
+  /* 形状 300ms 走完。此刻魔板已经盖满,所以这一帧可以无声地收掉遮罩并换页 ——
+     遮罩要压的是"底下的起始页",不该压着还没露面的接水页。 */
+  setTimeout(() => {
+    $('scrim').style.transition = 'none';
+    $('scrim').style.opacity = '0';
+    onCovered();
+  }, 300);
+  setTimeout(() => { m.style.opacity = '0' }, 310);
+  setTimeout(() => {
+    m.style.display = 'none'; m.style.opacity = '1'; m.innerHTML = '';
+    $('scrim').style.transition = '';
+  }, 470);
+}
+
+function collapseTo(onCovered){
+  if(!originRect){ onCovered && onCovered(); return; }
+  const sc = scrEl.getBoundingClientRect();
+  const o  = originRect;
+  const m  = $('magic');
+
+  /* 关键顺序:魔板先"无声无息"铺满(它是不透明的,盖得住) →
+     铺满的那一帧立刻切页 → 然后才开始缩小。
+     原先是 420ms 之后才切页,于是缩小的过程中露出来的全是接水页,
+     缩完才"啪"地跳成设备页 —— 那一下就是不连贯的来源。 */
+  m.innerHTML = '';
+  if(lastCard) m.appendChild(lastCard.cloneNode(true));   /* 缩小的一路上,卡片的样子都在 */
+  /* 返回不压暗:魔板本身从全屏缩小,它自己就是覆盖层;
+     而且用户是要回去看设备列表,把它压暗是错的。 */
+  m.style.transition = 'none';
+  m.style.display = 'block';
+  m.style.opacity = '1';
+  m.style.left = '0px';  m.style.top = '0px';
+  m.style.width = sc.width + 'px';  m.style.height = sc.height + 'px';
+  m.style.borderRadius = '0px';
+  m.style.boxShadow = 'none';
+  void m.offsetWidth;
+
+  onCovered && onCovered();          /* 这一帧就换页,魔板挡着看不见 */
+
+  /* 返回比进入快:Material 用 250ms 对 300ms */
+  m.style.transition = 'left .25s cubic-bezier(.4,0,.2,1), top .25s cubic-bezier(.4,0,.2,1), ' +
+                       'width .25s cubic-bezier(.4,0,.2,1), height .25s cubic-bezier(.4,0,.2,1), ' +
+                       'border-radius .25s cubic-bezier(.4,0,.2,1), box-shadow .25s cubic-bezier(.4,0,.2,1), ' +
+                       'opacity .16s linear';
+  requestAnimationFrame(() => {
+    m.style.left = o.left + 'px';  m.style.top = o.top + 'px';
+    m.style.width = o.w + 'px';    m.style.height = o.h + 'px';
+    m.style.borderRadius = originRadius + 'px';
+    /* 阴影和真卡片保持一致,万一有一帧重叠也不会显"重" */
+    m.style.boxShadow = '0 1px 7px rgba(143,76,56,.07)';
+  });
+
+  /* 280ms 时曲线早已收敛(偏差 0),魔板和真卡片完全重合 ——
+     这一帧直接撤掉它,不做淡出。
+     以前这里淡出 0.16s,那段时间两层互相透,才是"晃"的来源。 */
+  setTimeout(() => {
+    m.style.display = 'none'; m.style.opacity = '1'; m.innerHTML = '';
+    m.style.transition = '';
+  }, 280);
+}
+
+/* ── 底部 tab ── */
+let curTab = 0;
+
+document.querySelectorAll('.tb').forEach(t => t.addEventListener('click', () => {
+  const idx = +t.dataset.t;
+  if(idx === curTab) return;                       /* 同一个 tab 不重播 */
+  curTab = idx;
+  document.querySelectorAll('.tb').forEach(o => {
+    const on = +o.dataset.t === idx;
+    o.classList.toggle('on', on);
+    if(on){ o.classList.remove('jelly'); void o.offsetWidth; o.classList.add('jelly'); }
+  });
+  $('pDev').classList.toggle('hide', idx !== 0);
+  $('pOrder').classList.toggle('hide', idx !== 1);
+  if(idx === 1){ playOrders(); setStep('order'); } else { setStep('dev'); }
+}));
+
+/* ══════════════ 订单页 · 方案 C ══════════════ */
+/* 日期分组。金额不写死，从明细加出来 —— 免得改了明细忘了改总数。 */
+const ORDERS = [
+  { date:'3月18日', items:[
+      { dev:'1号楼西热水', time:'07:12', amt:1.20 },
+      { dev:'2号楼东热水', time:'07:10', amt:0.99 } ] },
+  { date:'3月17日', items:[
+      { dev:'1号楼西热水', time:'12:31', amt:2.30 },
+      { dev:'2号楼东热水', time:'20:02', amt:0.76 } ] },
+  { date:'3月15日', items:[
+      { dev:'1号楼西热水', time:'21:04', amt:1.85 } ] },
+  { date:'3月14日', items:[
+      { dev:'1号楼西热水', time:'08:20', amt:1.44 } ] },
+  { date:'3月12日', items:[
+      { dev:'1号楼西热水', time:'19:47', amt:3.80 } ] }
+];
+const DLD   = [0,90,40,160,220,130,60];            /* 故意打乱的延迟，递增会像音阶 */
+
+const FLAT = [];
+const money = n => '&yen;' + n.toFixed(2);
+
+function buildOrders(){
+  const flat = [];
+  ORDERS.forEach(g => g.items.forEach(it => flat.push({ ...it, date:g.date })));
+  FLAT.length = 0; flat.forEach((it, i) => FLAT.push({ ...it, i }));
+
+  const sum = Math.round(flat.reduce((a, b) => a + b.amt, 0) * 100) / 100;
+
+  /* 金额：每一位一个滑窗，延迟 0/50/100… 逐位落下 */
+  const num = $('oNum'); num.innerHTML = '';
+  [...sum.toFixed(2)].forEach((ch, i) => {
+    const el = document.createElement('i');
+    el.style.setProperty('--dl', (i * 50) + 'ms');
+    const u = document.createElement('u');
+    u.textContent = ch;
+    el.appendChild(u); num.appendChild(el);
+  });
+  $('oSub').textContent = '本月 · ' + ORDERS.length + ' 天 · ' + flat.length + ' 单';
+
+  /* 近 7 天柱：从明细里算出来。写死的话，一换成真订单立刻就对不上。
+     只按天分组不认日历 —— 缺的那天补 0，所以柱子数永远是 7。 */
+  const dayTot = ORDERS.slice().reverse().map(g => g.items.reduce((a, b) => a + b.amt, 0));
+  while(dayTot.length < 7) dayTot.unshift(0);
+  const last7 = dayTot.slice(-7);
+  const mx = Math.max.apply(null, last7.concat([0.01]));
+  $('oBars').innerHTML = last7.map((v, i) => {
+    const h = Math.round(v / mx * 100) / 100;
+    return '<i style="--h:' + Math.max(h, .04) + ';--dl:' + DLD[i] + 'ms" class="' +
+             (h === 1 ? 'hi' : '') + '"></i>';
+  }).join('');
+
+  /* 时间轴：竖线自己画下来，日期节点一个个亮，行跟着错落 */
+  let t = 280, k = 0, html = '<div class="spine"></div>';
+  ORDERS.forEach(g => {
+    html += '<div class="odate"><i style="--dl:' + t + 'ms"></i>' + g.date + '</div>';
+    t += 150;
+    g.items.forEach(it => {
+      html += '<div class="orow" data-i="' + (k++) + '" style="--dl:' + t + 'ms">' +
+                '<span><b>' + it.dev + '</b><small>' + it.time + '</small></span>' +
+                '<em>' + money(it.amt) + '</em></div>';
+      t += 85;
+    });
+  });
+  $('oTl').innerHTML = html;
+}
+
+function playOrders(){
+  const p = $('pOrder');
+  p.classList.remove('play');
+  void p.offsetWidth;
+  p.classList.add('play');
+}
+
+/* 空状态：点水滴，它眨两下眼再睡回去 */
+const drop = $('oDrop');
+drop.addEventListener('click', () => {
+  drop.classList.remove('wake');
+  void drop.offsetWidth;
+  drop.classList.add('wake');
+  clearTimeout(drop._t);
+  drop._t = setTimeout(() => drop.classList.remove('wake'), 1500);
+});
+
+buildOrders();
+
+/* ══════════════ 登录 ══════════════ */
+function enterDev(){
+  const cards = document.querySelectorAll('.dcard');
+  cards.forEach(c => c.classList.remove('in'));
+  void $('dlist').offsetWidth;                        /* 强制回流，否则重加 in 不播 */
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('in'), 110 + i * 90));
+}
+
+function showDevList(){
+  $('pLogin').classList.add('gone');
+  setTimeout(() => { $('pLogin').style.display = 'none'; }, 320);
+  setStep('dev');
+  enterDev();
+}
+
+let codeT = null;
+
+$('bSend').addEventListener('click', () => {
+  const b = $('bSend');
+  if(b.disabled) return;
+  b.disabled = true;
+  let n = 60;
+  b.textContent = n + 's 后重发';
+  $('iCode').focus();
+  codeT = setInterval(() => {
+    n--;
+    if(n <= 0){ clearInterval(codeT); codeT = null; b.disabled = false; b.textContent = '重新发送'; }
+    else b.textContent = n + 's 后重发';
+  }, 1000);
+  /* 演示：假装收到短信，把码填上，不然你没法往下走 */
+  setTimeout(() => { $('iCode').value = '888888'; }, 900);
+});
+
+$('bLogin').addEventListener('click', () => {
+  const b = $('bLogin');
+  if(b.dataset.busy) return;
+  b.dataset.busy = '1';
+  b.disabled = true;
+  $('plogo').classList.add('pop');
+  setLabel(b, '登录中…');
+  setTimeout(() => {
+    showDevList();
+    b.dataset.busy = '';
+    b.disabled = false;
+    setLabel(b, '登 录');
+    $('plogo').classList.remove('pop');
+  }, 950);
+});
+
+/* ══════════════ 扫码加设备 ══════════════ */
+let scanT = null;
+
+function openScan(){
+  setStep('scan');
+  $('pScan').classList.remove('done');
+  $('pScan').classList.add('entering');
+  clearTimeout(scanT);
+  /* 和点卡片完全同一条动画，只是源头换成右上角的「+」。
+     它是个 34px 的圆，所以圆角给一半 —— 缩回去的时候才还是圆的。 */
+  expandFrom($('bAdd'), () => {
+    $('pScan').classList.add('on');
+    /* 先加 .on 让页面可见，两帧之后再撤 entering，淡入才会真的播 */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pScan').classList.remove('entering');
+    }));
+    scanT = setTimeout(() => $('pScan').classList.add('done'), 1500);
+  }, null, 'var(--bg)', 17);
+}
+
+function closeScan(){
+  clearTimeout(scanT);
+  collapseTo(() => $('pScan').classList.remove('on'));
+}
+
+$('bAdd').addEventListener('click', openScan);
+$('bScanBack').addEventListener('click', closeScan);
+
+$('bAddDev').addEventListener('click', () => {
+  const id = 2, name = '1号楼南热水';
+  if(!document.querySelector('.dcard[data-d="' + id + '"]')){
+    const c = document.createElement('div');
+    c.className = 'dcard';
+    c.dataset.d = id;
+    c.innerHTML = '<span class="dot"></span>' +
+      '<div class="i"><div class="n">' + name + '</div>' +
+      '<div class="p">0.011 元/100mL · 空闲</div></div>' +
+      '<span class="arw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>';
+    c.addEventListener('click', () => openWater(id));
+    DEV.push({ name: name, off: false });
+    $('dlist').appendChild(c);
+  }
+  closeScan();
+  setTimeout(() => {
+    const c = document.querySelector('.dcard[data-d="2"]');
+    c.classList.remove('in'); void c.offsetWidth; c.classList.add('in');
+    toast('已添加 · ' + name);
+  }, 340);
+  setStep('dev');
+});
+
+/* ══════════════ 消费汇总 ══════════════ */
+/* 金额、次数、排行全部从同一份订单明细算出来，不另写一套假数字 */
+function buildSummary(){
+  const flat = [];
+  ORDERS.forEach(g => g.items.forEach(it => flat.push(it)));
+  const sum = Math.round(flat.reduce((a, b) => a + b.amt, 0) * 100) / 100;
+
+  const num = $('sNum'); num.innerHTML = '';
+  [...sum.toFixed(2)].forEach((ch, i) => {
+    const el = document.createElement('i');
+    el.style.setProperty('--dl', (i * 50) + 'ms');
+    const u = document.createElement('u'); u.textContent = ch; el.appendChild(u);
+    num.appendChild(el);
+  });
+
+  $('sCnt').textContent = flat.length + ' 次';
+  /* 一条订单都没有时 sum/flat.length 是 NaN，得挡住 */
+  $('sAvg').textContent = '\u00a5' + (flat.length ? (sum / flat.length).toFixed(2) : '0.00');
+
+  const byDev = {};
+  flat.forEach(it => { byDev[it.dev] = Math.round(((byDev[it.dev] || 0) + it.amt) * 100) / 100; });
+  const rank = Object.keys(byDev).map(k => ({ n: k, v: byDev[k] }))
+                     .sort((a, b) => b.v - a.v);
+  /* 没有订单时 rank 是空的 —— 这一行原来直接崩，而且是在"登录成功 → 进列表"
+     的路上崩的，用户看到的是"验证码对的也登不进去" */
+  $('sTop').textContent = rank.length ? rank[0].n : '还没有';
+
+  $('sRank').innerHTML = rank.map((r, i) =>
+    '<div class="rrow" style="--dl:' + (180 + i * 90) + 'ms">' +
+      '<div class="r1"><span class="rn">' + r.n + '</span>' +
+      '<span class="rv">' + money(r.v) + '</span></div>' +
+      '<div class="rbar"><i style="--w:' + (r.v / sum).toFixed(3) + '"></i></div>' +
+      '<div class="r2">' + Math.round(r.v / sum * 100) + '% · ' +
+        flat.filter(f => f.dev === r.n).length + ' 次</div>' +
+    '</div>').join('');
+
+  /* 近 6 个月：只有一个月的真实明细，其余标成"示例数据" */
+  const MV = [.32,.48,.62,.41,.55,1], ML = ['10月','11月','12月','1月','2月','3月'];
+  const MD = [0,80,30,150,210,120];
+  $('mBars').innerHTML = MV.map((v, i) =>
+    '<i style="--h:' + v + ';--dl:' + MD[i] + 'ms" class="' + (v === 1 ? 'hi' : '') + '"></i>').join('');
+  $('mLabs').innerHTML = ML.map(m => '<span>' + m + '</span>').join('');
+}
+
+function openSum(){
+  setStep('sum');
+  $('pSummary').classList.add('entering');
+  const src = document.querySelector('.osum');
+  lastCard = src;
+  expandFrom(src, () => {
+    $('pOrder').classList.add('cov');
+    $('pSummary').classList.add('on');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pSummary').classList.remove('entering');
+      $('pSummary').classList.remove('play'); void $('pSummary').offsetWidth;
+      $('pSummary').classList.add('play');
+    }));
+  }, 'pSummary', 'var(--bg)', 0);
+}
+
+document.querySelector('.osum').addEventListener('click', openSum);
+$('bkS').addEventListener('click', () => {
+  collapseTo(() => {
+    $('pSummary').classList.remove('on');
+    $('pOrder').classList.remove('cov');
+  });
+});
+
+/* ══════════════ 流程指示板 ══════════════ */
+const STEPS = [
+  { id:'login',  t:'登录',          d:'手机号 + 验证码，60 秒倒计时' },
+  { id:'dev',    t:'设备列表',       d:'两张卡片错落进场；右上角 + 加设备' },
+  { id:'scan',   t:'扫码加设备',     d:'从右上角那个 + 长成整页，扫描线来回走' },
+  { id:'water',  t:'接水 · 解锁',    d:'会醒来的锁 → 变水滴；结束接水' },
+  { id:'order',  t:'订单',          d:'竖线自己画下来，日期一个个亮' },
+  { id:'sum',    t:'消费汇总',       d:'金额块长成汇总页，数字全从明细算' },
+];
+
+$('steps').innerHTML = STEPS.map((s, i) =>
+  '<li data-s="' + s.id + '"><span class="n">' + (i + 1) + '</span>' +
+  '<span class="t"><b>' + s.t + '</b><span>' + s.d + '</span></span></li>').join('');
+
+function setStep(id){
+  document.querySelectorAll('#steps li').forEach(li => {
+    const on = li.dataset.s === id;
+    li.classList.toggle('on', on);
+    if(on) li.dataset.visited = '1';       /* 留个痕，自动演示跑完能查漏 */
+  });
+}
+
+/* ══════════════ 自动演一遍 ══════════════ */
+let autoRun = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function stopAuto(){
+  if(!autoRun) return;
+  autoRun.cancelled = true;
+  autoRun = null;
+  const b = $('bAuto');
+  b.classList.remove('busy');
+  b.textContent = '自动演一遍';
+}
+
+async function autoPlay(){
+  if(autoRun){ stopAuto(); return; }
+  const run = { cancelled:false };
+  autoRun = run;
+  const b = $('bAuto');
+  b.classList.add('busy'); b.textContent = '停止';
+
+  const wait = async ms => {
+    await sleep(ms);
+    if(run.cancelled) throw new Error('cancelled');
+  };
+
+  try {
+    setStep('login');
+    await wait(500);   $('bSend').click();             /* 发送验证码 */
+    await wait(1200);  $('bLogin').click();            /* 登录 */
+    await wait(1700);  $('bAdd').click();              /* 打开扫码 */
+    await wait(2400);  $('bAddDev').click();           /* 扫到 → 添加 */
+    await wait(1500);
+    document.querySelector('.dcard[data-d="2"]').click();   /* 点新设备 */
+    await wait(1800);  $('bUnlock').click();           /* 解锁 */
+    await wait(3000);  $('bEnd').click();              /* 结束接水 */
+    await wait(1500);  $('bk').click();                /* 返回设备页 */
+    await wait(1100);
+    document.querySelector('#pDev .tb[data-t="1"]').click();  /* 切到订单 */
+    await wait(2400);
+    document.querySelector('.osum').click();           /* 点金额 → 汇总 */
+    await wait(1900);  $('bkS').click();               /* 返回 */
+    await wait(900);
+  } catch(e) { /* 用户打断了 */ }
+  stopAuto();
+}
+
+$('bAuto').addEventListener('click', autoPlay);
+$('bReset').addEventListener('click', () => { location.hash = '#'; location.reload(); });
+
+/* 用户一碰手机就停掉自动演示（自动点击不会触发 pointerdown，所以不会自己停自己） */
+document.addEventListener('pointerdown', () => { if(autoRun) stopAuto(); }, true);
+
+/* 演示用的两个入口：不带参数时从登录页开始 */
+const HASH = location.hash;
+if(HASH === '#auto'){
+  history.replaceState(null, '', '#');
+  setStep('login');
+  setTimeout(autoPlay, 700);
+} else if(HASH === '#dev'){
+  /* 跳过登录 —— 给旧的回归测试用 */
+  $('pLogin').style.display = 'none';
+  setStep('dev');
+  enterDev();
+} else {
+  setStep('login');
+}
+
+buildOrders();
+buildSummary();
+
+/* 演示用：切到空状态，看看那只睡觉的水滴 */
+$('demoEmpty').addEventListener('click', () => {
+  const p = $('pOrder'), on = !p.classList.contains('empty');
+  p.classList.toggle('empty', on);
+  $('demoEmpty').textContent = on ? '回到有订单的样子' : '看空状态';
+  if(on){
+    document.querySelectorAll('.tb').forEach(o => {
+      const t = +o.dataset.t === 1;
+      o.classList.toggle('on', t);
+    });
+    curTab = 1;
+    $('pDev').classList.add('hide');
+    $('pOrder').classList.remove('hide');
+    setStep('order');
+  }
+});
+
+/* ══════════════ 接水页 ══════════════ */
+const wrap = $('wrap'), msg = $('msg'), halo = $('halo');
+const bUnlock = $('bUnlock'), bEnd = $('bEnd');
+let busy = false, done = false, timers = [];
+
+function clearTimers(){ timers.forEach(clearTimeout); timers = [] }
+function at(ms, fn){ timers.push(setTimeout(fn, ms)) }
+
+function setLabel(btn, text){
+  btn.classList.add('swapping');
+  at(140, () => { btn.querySelector('.lb').textContent = text; btn.classList.remove('swapping') });
+}
+
+function openWater(i){
+  setStep('water');
+  curDev = i;
+  $('mDev').textContent = DEV[i].name;
+  reset();
+  const card = document.querySelectorAll('.dcard')[i];
+  lastCard = card;
+  $('pWater').classList.add('entering');     /* 先摆好入场初始态 */
+  expandFrom(card, () => {
+    $('pDev').classList.add('hide');
+    $('pWater').classList.add('on');
+    /* 两帧之后才去掉 entering,否则浏览器会把"初始态"和"目标态"合并,动画不播 */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pWater').classList.remove('entering');
+    }));
+  }, 'pWater');
+}
+
+function reset(){
+  clearTimers(); busy = false; done = false;
+  wrap.className = 'stagewrap';
+  msg.classList.remove('lit');
+  halo.classList.remove('lit');
+  $('mBig').textContent = '设备已锁定';
+  $('mSm').textContent  = '解锁后机器上的按钮才会生效,解锁本身不扣费';
+  $('burst').classList.remove('go');
+  bUnlock.querySelector('.lb').textContent = '解锁设备';
+  bUnlock.disabled = false;
+  bEnd.disabled = true;
+}
+
+/* 一条时间轴 —— 每一步都接在下一步上 */
+bUnlock.addEventListener('click', () => {
+  if(busy || done) return;
+
+  if(DEV[curDev].off){
+    bUnlock.classList.add('swapping');
+    toast('这台设备离线了');
+    timers.push(setTimeout(() => bUnlock.classList.remove('swapping'), 160));
+    return;
+  }
+
+  busy = true;
+  bUnlock.disabled = true;
+  setLabel(bUnlock, '正在解锁…');
+
+  /* 0ms —— 睁眼 + 锁抖三下 */
+  wrap.classList.add('waking');
+  /* 150ms —— 圆环开始收 */
+  /* 500ms —— 亮点起跑 */
+  /* 1050ms —— 环收满、亮点到终点 */
+
+  /* 1350ms —— 弹开 + 炸开 */
+  at(1330, () => {
+    wrap.classList.remove('waking');
+    wrap.classList.add('done');
+
+    /* 8 道放射线,方向均分 + 轻微抖动,延迟 22ms 一道 */
+    const b = $('burst');
+    [...b.querySelectorAll('.ray')].forEach((d, i) => {
+      const a = i * 45 + (Math.random() * 16 - 8);
+      d.style.setProperty('--a', a.toFixed(1) + 'deg');
+      d.style.setProperty('--dl', (i * 22) + 'ms');
+    });
+    b.classList.add('go');
+
+    done = true;
+    toast('解锁成功 · 请在出水口点按开始');
+  });
+
+  /* 1500ms —— 文字换掉,变成"已解锁" */
+  at(1500, () => {
+    msg.classList.add('lit');
+    $('mBig').textContent = '已解锁';
+    $('mSm').textContent  = '现在到机器上按接水按钮,接完点下面的「结束接水」';
+    halo.classList.add('lit');
+    setLabel(bUnlock, '已解锁');
+    bEnd.disabled = false;
+  });
+});
+
+bEnd.addEventListener('click', () => {
+  clearTimers();
+  toast('已结束接水');
+  at(260, reset);
+});
+
+/* 返回 */
+$('bk').addEventListener('click', () => {
+  collapseTo(() => {
+    $('pWater').classList.remove('on');
+    $('pDev').classList.remove('hide');
+    reset();
+  });
+});
+</script>
+</body>
+</html>

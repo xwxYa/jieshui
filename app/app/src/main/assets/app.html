@@ -1,0 +1,3088 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>热水 · v12 完整流程</title>
+<style>
+  :root{
+    --primary:#8F4C38;
+    --primary-dim:#B47054;
+    --primary-lite:#C98D72;
+    --bg:#FFF8F6;
+    --surface:#FFFFFF;
+    --on-surface:#1A110F;
+    --on-surface-var:#5C4A45;
+    --outline-var:#E6D6D1;
+    --water:#5FB6E0;
+    --dark:#2B1C18;
+
+    --spring:cubic-bezier(0.34, 1.56, 0.64, 1);
+    --swipe:cubic-bezier(0.87, 0.05, 0.02, 0.97);
+    --fly:cubic-bezier(0.64, 0.08, 1, 0.97);
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent }
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:#EDE7E5; min-height:100vh; display:flex; align-items:center;
+    justify-content:center; gap:44px; padding:30px; color:var(--on-surface);
+  }
+
+  /* ═══════ 手机外壳 ═══════ */
+  .dev{
+    position:relative; width:390px; height:844px; flex:none;
+    background:#0F0A09; border-radius:46px; padding:9px;
+    box-shadow:0 24px 60px rgba(0,0,0,.24), 0 0 0 1px rgba(255,255,255,.06) inset;
+  }
+  .scr{
+    position:relative; width:100%; height:100%; background:var(--bg);
+    border-radius:38px; overflow:hidden;
+  }
+  .notch{
+    position:absolute; top:11px; left:50%; transform:translateX(-50%);
+    width:30px; height:30px; border-radius:50%; background:#0F0A09; z-index:90;
+  }
+  .sbar{
+    position:relative; z-index:2; height:44px; padding:0 26px 0 30px;
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:13.5px; font-weight:600; letter-spacing:.01em;
+  }
+  .sbar .icons{ display:flex; gap:5px; align-items:center }
+
+  .page{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    background:var(--bg);
+  }
+  .page.hide{ display:none }
+
+  .appbar{ flex:none; display:flex; align-items:center; gap:6px; padding:2px 20px 14px }
+  .appbar .bk{
+    width:34px; height:34px; margin-left:-8px; display:grid; place-items:center;
+    border-radius:50%; cursor:pointer;
+  }
+  .appbar .bk svg{ width:20px; height:20px }
+  .appbar h2{ font-size:19.5px; font-weight:650; letter-spacing:-.015em }
+
+  /* ═══════════════════════════════════════════
+     接水页 · 会醒来的锁
+     ═══════════════════════════════════════════ */
+  .halo{
+    position:absolute; left:50%; top:186px; width:330px; height:330px;
+    margin-left:-165px; border-radius:50%; pointer-events:none; z-index:0;
+    background:radial-gradient(circle, rgba(143,76,56,.10) 0%, rgba(143,76,56,0) 68%);
+    opacity:.5; transform:scale(.86);
+    transition:opacity .9s linear, transform 1.1s var(--spring), background .9s linear;
+  }
+  .halo.lit{
+    opacity:1; transform:scale(1);
+    background:radial-gradient(circle, rgba(143,76,56,.20) 0%, rgba(143,76,56,0) 68%);
+  }
+
+  .stagewrap{
+    position:relative; z-index:1; flex:none;
+    width:212px; height:212px; margin:24px auto 0;
+  }
+  .ring{ position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg) }
+  .ring circle{ fill:none }
+
+  .ring .dots{
+    stroke:#D6C0BA; stroke-width:5.2; stroke-linecap:round;
+    stroke-dasharray:.5 12.745;
+    transform-origin:100px 100px;
+    animation:dotspin 22s linear infinite;
+  }
+  .stagewrap.waking .ring .dots{ animation-duration:2.2s }
+  .stagewrap.done   .ring .dots{ opacity:0; transition:opacity .45s linear }
+  @keyframes dotspin{ to{ transform:rotate(360deg) } }
+
+  .ring .prog{
+    stroke:var(--primary); stroke-width:5.5; stroke-linecap:round;
+    stroke-dasharray:0 490.09; stroke-dashoffset:0; opacity:0;
+    transition:stroke-dasharray 1.05s var(--swipe), opacity .2s linear;
+  }
+  .stagewrap.waking .ring .prog,
+  .stagewrap.done   .ring .prog{ stroke-dasharray:490.09 0; opacity:1 }
+  .stagewrap.done   .ring .prog{ transition:none }
+
+  .orbit{
+    position:absolute; inset:0; opacity:0;
+    transition:opacity .25s linear;
+  }
+  .stagewrap.waking .orbit{ opacity:1; animation:orbitSpin 1.05s var(--swipe) forwards }
+  @keyframes orbitSpin{ from{ transform:rotate(0) } to{ transform:rotate(360deg) } }
+  .orbit i{
+    position:absolute; left:50%; top:23.3px; width:11px; height:11px; margin:-5.5px 0 0 -5.5px;
+    border-radius:50%; background:var(--primary);
+    box-shadow:0 0 0 5px rgba(143,76,56,.16);
+  }
+
+  .ring .pip{
+    fill:var(--primary); opacity:0;
+    transform-box:fill-box; transform-origin:center;
+  }
+  .stagewrap.done .ring .pip{ opacity:1; animation:pip 2.6s ease-in-out infinite }
+  .stagewrap.done .ring .pip.p2{ animation-delay:.42s }
+  .stagewrap.done .ring .pip.p3{ animation-delay:.84s }
+  @keyframes pip{
+    0%,100%{ transform:scale(.7); opacity:.35 }
+    42%    { transform:scale(1.5); opacity:1 }
+    58%    { transform:scale(1.1); opacity:.8 }
+  }
+
+  /* ── 圆心那把锁 ── */
+  .core{
+    position:absolute; left:50%; top:50%; width:96px; height:116px;
+    margin:-58px 0 0 -48px; display:grid; place-items:center;
+  }
+  .lock{ width:82px; height:99px; overflow:visible }
+
+  .lock .shackle{
+    fill:none; stroke:#C3AFA9; stroke-width:7; stroke-linecap:round;
+    transform-box:view-box; transform-origin:22px 42px;
+    transition:transform .55s var(--spring), stroke .5s linear;
+  }
+  .lock .lbody{
+    fill:#C3AFA9;
+    d:path("M 38 42 C 62 42 64 44 64 63 C 64 82 62 84 38 84 C 14 84 12 82 12 63 C 12 44 14 42 38 42 Z");
+    /* 不用 --spring:它 35% 的时间就冲完 97%,变形过程根本看不见。
+       这条曲线中段慢,能看清锁"长"成水滴的那一下。 */
+    transition:fill .5s linear, d .78s cubic-bezier(.45,0,.25,1.15);
+  }
+  /* 解锁后锁体自己"长"成一颗水滴 —— 锚点数完全一致,所以能平滑插值 */
+  /* 目标形状是水滴 —— 关键是"尖要长、肚要圆"。
+     原来宽 52 / 高 60(0.87),太矮胖;现在宽 52 / 高 72(0.72),
+     并且尖的那一段从 y=18 一直收到 y=52,拉出真正的"坠形"。 */
+  .stagewrap.done .lock .lbody{
+    fill:var(--water);
+    d:path("M 38 18 C 47 46 64 54 64 68 C 64 81 52 90 38 90 C 24 90 12 81 12 68 C 12 54 29 46 38 18 Z");
+  }
+  .stagewrap.waking .lock .lbody{ fill:var(--primary) }
+  .stagewrap.waking .lock .shackle,
+  .stagewrap.done   .lock .shackle{ stroke:var(--primary) }
+
+  .lock .eyeline{
+    fill:none; stroke:#FFF8F6; stroke-width:2.6; stroke-linecap:round;
+    transition:opacity .22s linear;
+  }
+  .lock .eyedot{
+    fill:#FFF8F6; opacity:0;
+    transform-box:fill-box; transform-origin:center;
+    transition:opacity .22s linear;
+  }
+  .stagewrap.waking .lock .eyeline,
+  .stagewrap.done   .lock .eyeline{ opacity:0 }
+  .stagewrap.waking .lock .eyedot,
+  .stagewrap.done   .lock .eyedot{ opacity:1 }
+
+  .stagewrap.done .lock .lface{ animation:lockLook 4.6s ease-in-out infinite 1.2s }
+  .lface{ transform-box:view-box }
+  @keyframes lockLook{
+    0%,18%,100%{ transform:translateX(0) }
+    28%,40%    { transform:translateX(-3px) }
+    52%,64%    { transform:translateX(3px) }
+    74%        { transform:translateX(0) }
+  }
+  .stagewrap.done .lock .eyedot{
+    animation:blink .3s linear 2.2s 2, blink .3s linear 4.6s 1;
+  }
+  @keyframes blink{
+    0%,100%{ transform:scaleY(1) }
+    50%    { transform:scaleY(.12) }
+  }
+
+  .lock .mouth{
+    fill:none; stroke:#FFF8F6; stroke-width:2.6; stroke-linecap:round;
+    transition:stroke .3s linear;
+  }
+  .stagewrap.waking .lock .mouth,
+  .stagewrap.done   .lock .mouth{ d:path("M32 70 Q38 77 44 70") }
+
+  .stagewrap.waking .lock{ animation:shake .54s ease-in-out .08s 1 }
+  @keyframes shake{
+    0%,100%{ transform:translateX(0) rotate(0) }
+    18%{ transform:translateX(-2.2px) rotate(-1.6deg) }
+    40%{ transform:translateX(2.2px) rotate(1.6deg) }
+    62%{ transform:translateX(-1.4px) rotate(-1deg) }
+    82%{ transform:translateX(1px) rotate(.6deg) }
+  }
+
+  .stagewrap.done .lock{
+    animation:jelly .62s ease-in-out both,
+              breathe 2.7s ease-in-out .72s infinite;
+  }
+  @keyframes breathe{
+    0%,100%{ transform:scale(1) }
+    50%    { transform:scale(1.06) }
+  }
+  @keyframes jelly{
+    0%  { transform:scale(1,1) }
+    32% { transform:scale(.9,1.13) }
+    58% { transform:scale(1.12,.91) }
+    78% { transform:scale(.97,1.03) }
+    100%{ transform:scale(1,1) }
+  }
+  .stagewrap.done .lock .shackle{
+    transform:translate(-27px,-35px) rotate(-74deg) scale(.82);
+    opacity:0;
+    transition:transform .56s cubic-bezier(.3,1.6,.5,1) .04s,
+               opacity .24s linear .3s,
+               stroke .5s linear;
+  }
+
+  /* 爆开 —— 全部是"线",不是"圆点"。
+     彩色圆点看起来像从素材站贴进来的,因为圆环是线条语言、圆心是块面语言,
+     突然冒出一堆实心彩色圆,三者不是一个系统。
+     改成:两圈扩散的细环(延续主圆环) + 8 道放射短线(像溅起的水花)。 */
+  .burst{ position:absolute; inset:0; pointer-events:none; z-index:3 }
+
+  .burst .wave{
+    position:absolute; left:50%; top:50%;
+    width:132px; height:132px; margin:-66px 0 0 -66px;
+    border-radius:50%; border:2px solid var(--primary);
+    opacity:0;
+  }
+  .burst.go .wave{ animation:wave .92s cubic-bezier(.16,.7,.3,1) both }
+  .burst.go .wave.w2{ animation-delay:.15s; border-color:var(--water) }
+  @keyframes wave{
+    0%  { opacity:.5; transform:scale(.34) }
+    70% { opacity:.22 }
+    100%{ opacity:0;  transform:scale(1.62) }
+  }
+
+  .burst .ray{
+    position:absolute; left:50%; top:50%;
+    width:2.6px; height:24px; margin:-12px 0 0 -1.3px;
+    border-radius:2px; background:var(--water);
+    opacity:0; transform-origin:center;
+  }
+  .burst .ray:nth-child(even){ background:var(--primary-lite); height:19px; margin-top:-9.5px }
+  .burst.go .ray{ animation:ray .74s cubic-bezier(.16,.7,.3,1) var(--dl) both }
+  @keyframes ray{
+    0%  { opacity:0; transform:rotate(var(--a)) translateY(0)      scaleY(.25) }
+    22% { opacity:1; transform:rotate(var(--a)) translateY(-20px)  scaleY(1)   }
+    100%{ opacity:0; transform:rotate(var(--a)) translateY(-50px)  scaleY(.3)  }
+  }
+
+  .msg{ position:relative; z-index:1; text-align:center; padding:0 40px; margin-top:34px }
+  .msg .big{
+    font-size:20px; font-weight:650; letter-spacing:-.015em;
+    transition:color .4s linear;
+  }
+  .msg.lit .big{ color:var(--primary) }
+  .msg .sm{
+    margin-top:8px; font-size:12.5px; line-height:1.7;
+    color:var(--on-surface-var);
+  }
+  .txtswap{ position:relative; display:block; overflow:hidden }
+  .txtswap > *{
+    display:block; transition:transform .42s var(--spring), opacity .3s linear;
+  }
+  .txtswap .out{ position:absolute; inset:0; transform:translateY(0); opacity:1 }
+  .txtswap .in{ transform:translateY(100%); opacity:0 }
+  .txtswap.swapped .in{ transform:translateY(0); opacity:1 }
+  .txtswap.swapped .out{ transform:translateY(-100%); opacity:0 }
+
+  .meta{
+    position:relative; z-index:1; flex:none;
+    margin:30px 22px 0; padding-top:14px;
+    border-top:1px solid var(--outline-var);
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:12.5px; color:var(--on-surface-var);
+  }
+  .meta b{ color:var(--on-surface); font-weight:650; font-variant-numeric:tabular-nums }
+  .meta .unit{ font-size:11px; color:#9C8A84; margin-left:2px }
+
+  .foot{ flex:none; margin-top:auto; padding:14px 18px 20px; display:flex; flex-direction:column; gap:9px }
+  .btn{
+    position:relative; height:53px; border:0; border-radius:26.5px;
+    font:inherit; font-size:15.5px; font-weight:650; cursor:pointer;
+    overflow:hidden; transition:transform .3s var(--spring), background .3s linear, color .3s linear;
+  }
+  .btn.fill{ background:var(--primary); color:#fff }
+  .btn.dark{ background:var(--dark); color:#fff }
+  .btn:disabled{ background:#EDE2DF; color:#B2A29C; cursor:default }
+  .btn:not(:disabled):active{ transform:scale(.955) }
+  .btn .lb{ display:block; transition:opacity .14s linear, transform .3s var(--spring) }
+  .btn.swapping .lb{ opacity:0; transform:translateY(-6px) }
+
+  .toast{
+    position:absolute; left:50%; bottom:172px; z-index:60;
+    background:var(--dark); color:#fff; font-size:13px; font-weight:600;
+    padding:9px 18px; border-radius:999px; white-space:nowrap;
+    opacity:0; pointer-events:none;
+  }
+  .toast.on{ animation:toastPop .38s ease-in-out both }
+  @keyframes toastPop{
+    from{ opacity:0; transform:translate(-50%,7px) scale(.2,.8) }
+    60% { opacity:1; transform:translate(-50%,-1.5px) scale(1.1,1.05) }
+    to  { opacity:1; transform:translate(-50%,0) scale(1,1) }
+  }
+  .toast.off{ animation:toastFade .22s linear both }
+  @keyframes toastFade{ from{ opacity:1; transform:translate(-50%,0) } to{ opacity:0; transform:translate(-50%,3px) } }
+
+  /* ═══════════════════════════════════════════
+     设备列表页
+     ═══════════════════════════════════════════ */
+  .dlist{ flex:1; overflow-y:auto; padding:0 18px 20px }
+  .dlist::-webkit-scrollbar{ width:0 }
+  .dcard{
+    background:var(--surface); border-radius:18px; padding:15px 17px;
+    margin-bottom:10px; cursor:pointer;
+    box-shadow:0 1px 7px rgba(143,76,56,.07);
+    display:flex; align-items:center; gap:13px;
+    opacity:0; transform:translateY(10px);
+    transition:opacity .35s linear, transform .45s var(--spring);
+  }
+  .dcard.in{ opacity:1; transform:translateY(0) }
+  .dcard:active{ transform:scale(.978) }
+  .dcard .dot{
+    width:9px; height:9px; border-radius:50%; background:#4CC07A; flex:none;
+    box-shadow:0 0 0 4px rgba(76,192,122,.16);
+  }
+  .dcard .dot.off{ background:#C0B4B0; box-shadow:0 0 0 4px rgba(192,180,176,.16) }
+  .dcard .i{ flex:1; min-width:0 }
+  .dcard .i .n{ font-size:15px; font-weight:650; letter-spacing:-.01em }
+  .dcard .i .p{ margin-top:3px; font-size:12px; color:var(--on-surface-var) }
+  .dcard .arw{ color:#C9B8B2; flex:none }
+  .dcard .arw svg{ width:18px; height:18px }
+
+  /* ── 卡片扩展:点哪张卡,就从哪张卡长成整页 ──
+     不做左右推 —— 底部 tab 已经把"设备"和"订单"分成左右两区了,
+     接水页既不属于左也不属于右,它是"从设备卡片里长出来的"。 */
+  #pDev{ z-index:1 }
+  /* 接水页用 visibility 而不是 display:none —— 隐藏时仍然占着布局,
+     这样点卡片的一瞬间就能量到"信息行在哪",才能让卡片上的字飞过去。 */
+  #pWater{ z-index:2; visibility:hidden }
+  #pWater.on{ visibility:visible }
+
+  /* 就是淡入 —— 不再搞炸开和逐层落位 */
+  #pWater .stagewrap,
+  #pWater .msg,
+  #pWater .meta,
+  #pWater .foot{ transition:opacity .3s linear }
+  #pWater.entering .stagewrap,
+  #pWater.entering .msg,
+  #pWater.entering .meta,
+  #pWater.entering .foot{ opacity:0; transition:none }  /* 立即透明,不要先淡出再淡入 */
+
+  /* 卡片放大用的"替身"。
+     两个关键点,少了任一个就会出现白屏:
+     ① 底色用 --bg(暖白),不是纯白 —— 和接水页同色,长大时看不出接缝
+     ② 里面装着被点卡片的克隆,卡片上的字会淡出,不是一块空板 */
+  /* Material Design 的 Container Transform 官方参数:
+       进入 300ms · 缓动 cubic-bezier(0.4, 0.0, 0.2, 1)
+       新内容在进度 0~25% 之间淡入(300ms × 25% = 75ms) */
+  .magic{
+    position:absolute; z-index:70; display:none; overflow:hidden;
+    background:var(--surface); pointer-events:none;
+    box-shadow:0 1px 7px rgba(143,76,56,.09);
+    transition:left .3s cubic-bezier(.4,0,.2,1),
+               top .3s cubic-bezier(.4,0,.2,1),
+               width .3s cubic-bezier(.4,0,.2,1),
+               height .3s cubic-bezier(.4,0,.2,1),
+               border-radius .3s cubic-bezier(.4,0,.2,1),
+               box-shadow .3s cubic-bezier(.4,0,.2,1),
+               opacity .16s linear;
+  }
+  /* 遮罩:纯黑 32%(#52000000)。少这一层,容器放大时和背景糊在一起 */
+  .scrim{
+    position:absolute; inset:0; z-index:69; background:#000;
+    opacity:0; pointer-events:none;
+    transition:opacity .25s cubic-bezier(.4,0,.2,1);
+  }
+  /* 克隆进来的卡片:去掉它自己那份入场动画和卡片外观 */
+  #magic .dcard{
+    opacity:1; transform:none; margin:0;
+    background:transparent; box-shadow:none;
+    transition:opacity .08s linear;   /* 0~25% 进度 = 75ms 内让位 */
+  }
+
+  /* ── 底部 tab:左设备 / 右订单 ── */
+  .tabbar{
+    flex:none; display:flex; background:var(--surface);
+    border-top:1px solid var(--outline-var); padding:7px 0 14px;
+  }
+  .tb{
+    flex:1; border:0; background:none; font:inherit; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    color:#AD9C96; font-size:10.5px; font-weight:650; letter-spacing:.02em;
+    transition:color .2s linear, transform .3s var(--spring);
+  }
+  .tb.on{ color:var(--primary) }
+  .tb:active{ transform:scale(.92) }
+  .tb svg{ width:22px; height:22px }
+
+  .oempty{
+    flex:1; display:grid; place-items:center; text-align:center;
+    color:#B3A39D; font-size:13px; line-height:1.8;
+  }
+
+  /* ═══════════════════════════════════════════
+     订单页 · 方案 C：把订单串成一条时间
+     ═══════════════════════════════════════════ */
+  #pOrder{ z-index:1 }
+  .obody{ flex:1; overflow-y:auto; padding:0 18px 16px }
+
+  /* 拉账单时的转圈 —— 只在手上一份数据都没有时出现 */
+  .oload{ display:none; flex-direction:column; align-items:center; gap:12px;
+          padding:70px 0; color:#B49A93; font-size:13px }
+  #pOrder.loading .oload{ display:flex }
+  #pOrder.loading .obody{ display:none }
+  .spin{ width:22px; height:22px; border:2.5px solid var(--outline-var);
+         border-top-color:var(--primary); border-radius:50%;
+         animation:spin .8s linear infinite }
+  @keyframes spin{ to{ transform:rotate(360deg) } }
+  .obody::-webkit-scrollbar{ width:0 }
+
+  /* 金额：逐位落下（挤压滑窗，yui540 的手法⑤） */
+  /* 顶部：左边总额，右边年份滚轮 */
+  /* 左边内容比滚轮矮，顶部对齐的话下方会空一块。居中就不明显了。 */
+  .osum{ display:flex; align-items:center; gap:10px; padding-top:2px }
+  .osum .left{ flex:1; min-width:0 }
+  .oamt{ display:flex; align-items:baseline }
+  .ocur{ font-size:20px; font-weight:650; color:#A08E88; margin-right:3px }
+  .onum{ display:flex; align-items:flex-start; height:42px; overflow:hidden }
+  .onum > i{ display:block; height:42px; font-style:normal; font-size:34px; font-weight:700;
+             line-height:42px; letter-spacing:-.6px; overflow:hidden;
+             font-variant-numeric:tabular-nums }
+  .onum > i > u{ display:block; text-decoration:none; transform:translateY(0) }
+  .osub{ margin-top:1px; font-size:11.5px; color:#A08E88;
+          display:flex; align-items:center; gap:6px }
+  /* 给个能点的暗示 —— 不然谁知道这块可以点进去看汇总 */
+  .osub .more{ font-size:10.5px; font-weight:650; color:var(--primary-dim);
+               padding:1px 6px; border-radius:7px; background:#F6EBE6 }
+
+  /* 年份滚轮 —— 用原生 scroll-snap，惯性和吸附都是系统的，
+     不用自己算位移。上下各垫一格，第一个和最后一个才滚得到正中间。 */
+  .oyears{ flex:none; width:62px; height:132px; overflow-y:auto;
+           scroll-snap-type:y mandatory; scrollbar-width:none;
+           -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+           -webkit-mask-image:linear-gradient(to bottom, transparent, #000 26%, #000 74%, transparent);
+                   mask-image:linear-gradient(to bottom, transparent, #000 26%, #000 74%, transparent) }
+  .oyears::-webkit-scrollbar{ display:none }
+  .oyears .pad{ height:44px }
+  .oyears b{ display:flex; align-items:center; justify-content:flex-end; gap:4px;
+             height:44px; scroll-snap-align:center; font-size:15px; font-weight:650;
+             color:#CBB6AF; cursor:pointer; user-select:none;
+             transform:scale(1); transform-origin:right center;
+             transition:color .24s linear, transform .32s var(--spring) }
+  .oyears b .yr{ font-size:10.5px; font-weight:600; opacity:.7 }
+  /* 「小 大 小」—— --k 由 JS 按离容器中心的距离实时算（0 最远，1 正中），
+     所以滚动过程中大小是连续变化的，不是到了才跳一下。 */
+  .oyears b{ transform:scale(calc(.78 + var(--k, 0) * .42));
+             color:rgba(143, 76, 56, calc(.28 + var(--k, 0) * .72)) }
+  .oyears b.on{ font-weight:750 }
+
+  /* 当年小计。定高 + 行高 1 —— 不依赖子元素的行高。
+     baseline 对齐时 11px 的小字会膨胀到 29px，把容器撑高一倍。 */
+  /* 当年小计。用 grid 不用 flex —— flex 下这个 11px 的小字总会被挤到第二行，
+     行高翻倍把容器从 46px 撑到 80px。grid 的列是定死的，不会。 */
+  .oysum{ display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:8px;
+          height:46px; margin-top:10px;
+          border-bottom:1px solid var(--outline-var); line-height:1 }
+  .oysum > *{ line-height:1; white-space:nowrap }
+
+  /* 月份块。背景保持透明 —— 加底色和描边会让它像一张浮起来的卡，
+     而它本来就是同一张流水的一部分。月份之间只用一条细线分开。 */
+  .ymon{ border-top:1px solid var(--outline-var) }
+  .ymon:first-child{ border-top:0; margin-top:6px }
+  /* 月份头。同上，用 grid 保证不换行。 */
+  .ymon .mtop{ display:grid; grid-template-columns:auto 1fr auto auto; align-items:center; gap:8px;
+               width:100%; height:46px; padding:0; border:0; background:none; cursor:pointer;
+               font-family:inherit; color:inherit; text-align:left; line-height:1;
+               transition:opacity .2s linear }
+  .ymon .mtop > *{ line-height:1; white-space:nowrap }
+  .ymon .mtop:active{ opacity:.55 }
+  .ymon .mtop .mon{ font-size:13px; font-weight:750; color:var(--primary) }
+  .ymon .mtop .days{ font-size:11px; color:#B49A93; font-variant-numeric:tabular-nums }
+  .ymon .mtop .tot{ margin-left:auto; font-size:13px; font-weight:750; color:var(--primary);
+                    font-variant-numeric:tabular-nums }
+  .ymon .mtop .arw{ flex:none; width:15px; height:15px; color:#C4AEA8;
+                    transform:rotate(0deg); transition:transform .38s var(--spring) }
+  .ymon.open .mtop .arw{ transform:rotate(90deg) }
+  /* 折叠用 grid-template-rows 0fr↔1fr，不用 height（不用猜高度） */
+  .ymon .mbody{ display:grid; grid-template-rows:0fr;
+                transition:grid-template-rows .42s var(--spring) }
+  .ymon.open .mbody{ grid-template-rows:1fr }
+  .ymon .mbody > .inner{ overflow:hidden; min-height:0 }
+  .oysum .y{ font-size:13px; font-weight:750; color:var(--primary) }
+  .oysum .days{ font-size:11px; color:#A08E88 }
+  .oysum .tot{ margin-left:auto; font-size:13.5px; font-weight:750; color:var(--primary);
+               font-variant-numeric:tabular-nums; height:17px; overflow:hidden; line-height:17px }
+  .oysum .tot > u{ display:block; text-decoration:none }
+  .oysum.out{ animation:oOut .15s linear both }
+
+  /* 时间轴。行自己带左内边距 —— 不靠父元素缩进，
+     因为点开时这一行要被克隆进魔板，必须在哪里都长得一样。 */
+  .tl{ position:relative; margin-top:12px }
+  /* left 是相对 .tl 的边框盒算的。左右那 18px 内边距在 .obody 上，
+     不在 .tl 上 —— 所以这里是 12px，不是 30px（30-18）。
+     写成 30px 的话竖线会跑到文字里面去。 */
+  .tl .spine{ position:absolute; left:12px; top:2px; bottom:10px; width:1.5px;
+              background:#E8D5D0; transform:scaleY(1); transform-origin:top }
+  .odate{ position:relative; display:flex; align-items:baseline; gap:9px;
+          padding:11px 0 5px 26px; font-size:11.5px; font-weight:650;
+          color:var(--primary) }
+  /* 当日合计 —— 扫一眼就知道这天花了多少（Monzo 的手法） */
+  .odate .dsum{ margin-left:auto; font-size:11.5px; font-weight:650; color:#B49A93;
+                font-variant-numeric:tabular-nums;
+                height:14px; overflow:hidden; line-height:14px }
+  .odate .dsum > u{ display:block; text-decoration:none }
+  .odate .dsum > u{ animation:oLand .5s var(--spring) both; animation-delay:var(--dl) }
+  .odate > i{ position:absolute; left:7px; top:14px; width:11px; height:11px;
+              border-radius:50%; background:var(--primary); transform:scale(1) }
+  .orow{ display:flex; justify-content:space-between; gap:10px; align-items:baseline;
+         padding:9px 0 9px 26px; border-bottom:1px solid #F3E7E3 }
+  .orow:last-child{ border-bottom:0 }
+  .orow b{ font-weight:620; font-size:13.5px }
+  .orow small{ color:#A08E88; font-size:11px; margin-left:6px }
+  .orow em{ font-style:normal; font-weight:700; font-size:13.5px; color:var(--primary);
+            white-space:nowrap; font-variant-numeric:tabular-nums }
+
+  /* 播放用 animation，不用 transition。
+     理由：终态就是元素本来的样子，所以页面一打开就是成品，
+     点 tab 过去才从起点重演一遍。transition 做不到 —— 它的"初始态"必然不是终态，
+     结果就是"没播放 = 一片空白"。 */
+  #pOrder.play .onum > i > u{ animation:oLand .52s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .oyears b{ animation:oSlide .5s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .oysum  { animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .oysum .tot > u{ animation:oLand .5s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .tl .spine{ animation:oDraw 1s var(--swipe) both }
+  #pOrder.play .ymon{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  /* 展开那一块的内容才播入场 —— 折着的时候动画白播一遍 */
+  #pOrder .ymon.open .odate{ animation:oRow .46s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder .ymon.open .odate > i{ animation:oPop .44s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder .ymon.open .odate .dsum > u{ animation:oLand .46s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder .ymon.open .orow{ animation:oRow .44s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder .ymon.open .tl .spine{ animation:oDraw .8s var(--swipe) both }
+  #pOrder.play .odate > i{ animation:oPop .4s var(--spring) both; animation-delay:var(--dl) }
+  #pOrder.play .orow{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+
+  @keyframes oLand{ from{ transform:translateY(-104%) } }
+  @keyframes oGrow{ from{ transform:scaleY(0) } }
+  @keyframes oRow { from{ opacity:0; transform:translateY(9px) } }
+  @keyframes oPop { from{ transform:scale(0) } }
+  @keyframes oDraw{ from{ transform:scaleY(0) } }
+  @keyframes oSlide{ from{ opacity:0; transform:translateX(12px) scale(.9) } }
+  @keyframes oOut{ to{ opacity:0; transform:translateY(-5px) } }
+  /* 换年时旧内容快出 */
+  #pOrder .tl.out{ animation:oOut .15s linear both }
+
+  /* 被详情页盖住时用 visibility，不能用 display:none ——
+     display 再切回来会让整页动画重新播一遍。 */
+  #pOrder.cov{ visibility:hidden }
+
+  /* ── 空状态：睡觉的水滴 ── */
+  .oempty{ flex:1; display:none; flex-direction:column; align-items:center;
+           justify-content:center; gap:16px }
+  #pOrder.empty .obody{ display:none }
+  #pOrder.empty .oempty{ display:flex }
+  .odrop{ width:76px; height:100px; overflow:visible; cursor:pointer }
+  .odrop:not(.wake){ animation:oBreathe 3.4s ease-in-out infinite }
+  .odrop .oskin{ fill:#DCCCC7; transition:fill .4s linear }
+  .odrop .eyel{ opacity:1; transition:opacity .12s linear }
+  .odrop .eyedot{ opacity:0; transform-box:fill-box; transform-origin:center }
+  .odrop.wake{ animation:oSquash .62s var(--spring) }
+  .odrop.wake .oskin{ fill:var(--primary-lite) }
+  .odrop.wake .eyel{ opacity:0 }
+  .odrop.wake .eyedot{ opacity:1; animation:oBlink .34s linear 2 }
+  @keyframes oBreathe{ 0%,100%{ transform:scale(1) } 50%{ transform:scale(1.035) } }
+  @keyframes oBlink{ 0%,100%{ transform:scaleY(1) } 50%{ transform:scaleY(.08) } }
+  @keyframes oSquash{ 0%{ transform:scale(1) } 48%{ transform:scale(.95,1.15) }
+                      74%{ transform:scale(1.14,.96) } 100%{ transform:scale(1) } }
+  .ohint{ font-size:12.5px; color:#B3A39D }
+
+  /* ═══════════════════════════════════════════
+     登录页
+     ═══════════════════════════════════════════ */
+  #pLogin{ z-index:5; transition:opacity .3s linear }
+  #pLogin.gone{ opacity:0; pointer-events:none }
+  /* 内容自己在剩下的空间里居中。不能给整页加 justify-content:center ——
+     那会把系统状态栏也一起拽下来。状态栏是屏幕画的，它必须贴顶。 */
+  .lwrap{ flex:1; display:flex; flex-direction:column; justify-content:center;
+          padding:0 30px 40px }
+  .plogo{ width:66px; height:66px; margin:0 auto 24px; display:block }
+  .plogo .tip{ fill:var(--primary); transform-box:fill-box; transform-origin:bottom }
+  .plogo.pop .tip{ animation:oSquash .62s var(--spring) }
+  .ptitle{ font-size:22px; font-weight:700; text-align:center; letter-spacing:-.02em }
+  .psub{ font-size:12.5px; color:#A08E88; text-align:center; margin-top:7px; line-height:1.7 }
+  .pform{ margin-top:28px; display:flex; flex-direction:column; gap:10px }
+  .pfield{ background:var(--surface); border-radius:14px; padding:12px 16px;
+           box-shadow:0 1px 6px rgba(143,76,56,.06) }
+  .pfield .lbl{ font-size:10.5px; color:#B3A39D }
+  .pfield input{ display:block; width:100%; border:0; background:none; padding:0; margin-top:2px;
+                 font:inherit; font-size:14px; font-weight:600; color:var(--on-surface);
+                 letter-spacing:.01em; outline:none }
+  .pfield .crow{ display:flex; align-items:center; gap:10px }
+  .sendbtn{ flex:none; border:0; background:none; font:inherit; font-size:12.5px;
+            font-weight:650; color:var(--primary); cursor:pointer;
+            padding:2px 0 2px 10px; white-space:nowrap }
+  .sendbtn:disabled{ color:#C4B4AE; cursor:default }
+  .pform .btn{ margin-top:6px }
+  .plegal{ margin-top:18px; font-size:10.5px; color:#C4B4AE; text-align:center; line-height:1.8 }
+
+  /* ═══════════════════════════════════════════
+     扫码加设备
+     ═══════════════════════════════════════════ */
+  /* 扫码页和接水页/汇总页用同一条动画：从按下去的那个元素长成整页。
+     这里源头是右上角那个 34px 的「+」。
+     不做"从底下滑上来的相机卡片" —— 它不是另一个页面，它就是那个按钮的展开。 */
+  #pScan{ z-index:4; visibility:hidden }
+  #pScan.on{ visibility:visible }
+  #pScan .appbar,
+  #pScan .scanwrap,
+  #pScan .foot{ transition:opacity .3s linear }
+  #pScan.entering .appbar,
+  #pScan.entering .scanwrap,
+  #pScan.entering .foot{ opacity:0; transition:none }
+  .appbar .sp{ flex:1 }
+  .ib{ width:34px; height:34px; margin-right:-6px; display:grid; place-items:center;
+       border-radius:50%; cursor:pointer; color:var(--primary) }
+  .ib svg{ width:21px; height:21px }
+  .ib:active{ transform:scale(.9) }
+
+  .scanwrap{ flex:1; display:flex; flex-direction:column; align-items:center;
+             justify-content:center; gap:20px }
+  .vf{ position:relative; width:208px; height:208px; border-radius:24px; background:#F4EBE8 }
+  .vf .c{ position:absolute; width:26px; height:26px; border:3px solid var(--primary); border-radius:7px }
+  .vf .c.tl{ left:15px; top:15px;    border-right:0; border-bottom:0 }
+  .vf .c.tr{ right:15px; top:15px;   border-left:0;  border-bottom:0 }
+  .vf .c.bl{ left:15px; bottom:15px; border-right:0; border-top:0 }
+  .vf .c.br{ right:15px; bottom:15px;border-left:0;  border-top:0 }
+  .vf .sline{ position:absolute; left:22px; right:22px; top:22px; height:2px;
+              border-radius:2px; background:var(--primary); opacity:.85;
+              animation:sweep 1.9s ease-in-out infinite;
+              transition:opacity .2s linear }
+  @keyframes sweep{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(162px) } }
+  #pScan.done .vf .sline{ animation:none; opacity:0 }
+  .vf .qrmark{ position:absolute; inset:0; display:grid; place-items:center; opacity:.16;
+               color:var(--primary); font-size:11px; font-weight:650; letter-spacing:.12em }
+  .shint{ font-size:12.5px; color:#A08E88; text-align:center; line-height:1.8 }
+
+  .sfound{ flex:none; padding:0 20px 6px; opacity:0; transform:translateY(14px);
+           pointer-events:none;
+           transition:opacity .3s linear, transform .46s var(--spring) }
+  #pScan.done .sfound{ opacity:1; transform:none; pointer-events:auto }
+  .sf{ background:var(--surface); border-radius:16px; padding:14px 16px; margin-bottom:10px;
+       box-shadow:0 1px 7px rgba(143,76,56,.07);
+       display:flex; align-items:center; gap:12px }
+  .sf .dot{ width:9px; height:9px; border-radius:50%; background:#4CC07A; flex:none;
+            box-shadow:0 0 0 4px rgba(76,192,122,.16) }
+  .sf .i{ flex:1; min-width:0 }
+  .sf .i .n{ font-size:14.5px; font-weight:650 }
+  .sf .i .p{ margin-top:3px; font-size:11.5px; color:var(--on-surface-var) }
+  #pScan .foot{ padding-bottom:22px }
+  /* .btn 是 inline-block，不拉通栏的话宽度只有文字那么宽 ——
+     而它是个 26.5px 圆角的胶囊，圆角会把首尾两个字切掉。 */
+  .sfound .btn{ display:block; width:100% }
+
+  /* ═══════════════════════════════════════════
+     消费汇总
+     ═══════════════════════════════════════════ */
+  #pSummary{ z-index:2; visibility:hidden }
+  #pSummary.on{ visibility:visible }
+  #pSummary .appbar, #pSummary .swrap{ transition:opacity .3s linear }
+  #pSummary.entering .appbar, #pSummary.entering .swrap{ opacity:0; transition:none }
+  .swrap{ flex:1; overflow-y:auto; padding:2px 20px 24px }
+  .swrap::-webkit-scrollbar{ width:0 }
+  .snum{ font-size:34px; font-weight:700; letter-spacing:-.03em;
+         font-variant-numeric:tabular-nums }
+  .snum small{ font-size:15px; font-weight:650; color:#A08E88; margin-right:3px }
+  .slab{ font-size:11.5px; color:#A08E88; margin-top:2px }
+  .scards{ display:flex; gap:10px; margin-top:15px }
+  .scards .sc{ flex:1; background:var(--surface); border-radius:15px; padding:12px 14px;
+               box-shadow:0 1px 6px rgba(143,76,56,.06) }
+  .scards .sc .k{ font-size:10.5px; color:#B3A39D }
+  .scards .sc .v{ margin-top:4px; font-size:17px; font-weight:700;
+                  font-variant-numeric:tabular-nums }
+  /* 设备名比数字长得多，挤在三分之一宽里会被折成两行 —— 给它一整行 */
+  .scards .sc.wide{ display:flex; align-items:baseline; justify-content:space-between; gap:12px }
+  .scards .sc.wide .v{ margin-top:0; font-size:15px }
+  .sblock{ margin-top:24px }
+  .sblock h4{ font-size:11.5px; font-weight:650; color:#A08E88; margin-bottom:12px }
+  .sblock h4 em{ font-style:normal; color:#C4B4AE; font-weight:600; margin-left:5px }
+  .mbars{ display:flex; align-items:flex-end; gap:9px; height:76px }
+  .mbars > i{ flex:1; height:76px; background:#E2D3CE; border-radius:5px 5px 3px 3px;
+              transform:scaleY(var(--h)); transform-origin:bottom }
+  .mbars > i.hi{ background:var(--primary) }
+  .mlabs{ display:flex; gap:9px; margin-top:7px }
+  .mlabs > span{ flex:1; text-align:center; font-size:10px; color:#B3A39D }
+  .rrow{ padding:10px 0 12px; border-bottom:1px solid #F6ECE9 }
+  .rrow:last-child{ border-bottom:0 }
+  .rrow .r1{ display:flex; justify-content:space-between; align-items:baseline; gap:12px }
+  .rrow .rn{ font-size:13px; font-weight:620 }
+  .rrow .rv{ font-size:13px; font-weight:700; color:var(--primary);
+             font-variant-numeric:tabular-nums }
+  .rrow .rbar{ margin-top:8px; height:6px; border-radius:3px; background:#F1E4E0; overflow:hidden }
+  .rrow .rbar > i{ display:block; height:100%; border-radius:3px; background:var(--primary-dim);
+                   transform:scaleX(var(--w)); transform-origin:left }
+  .rrow .r2{ margin-top:6px; font-size:10.5px; color:#B3A39D }
+
+  /* 汇总页的入场：终态就是默认样子，加 .play 才重演 */
+  #pSummary.play .scards .sc{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .mbars > i{ animation:oGrow .46s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .rrow{ animation:oRow .5s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .rrow .rbar > i{ animation:oDrawH .55s var(--spring) both; animation-delay:var(--dl) }
+  #pSummary.play .snum > i > u{ animation:oLand .52s var(--spring) both; animation-delay:var(--dl) }
+  .onum.tight{ height:42px }
+
+  /* ═══════════════════════════════════════════
+     右侧：流程指示板
+     ═══════════════════════════════════════════ */
+  .flow{ width:352px; flex:none; font-size:13px; line-height:1.75; color:#4A3B37 }
+  .flow h1{ font-size:18px; margin-bottom:5px; letter-spacing:-.01em }
+  .flow .sub{ font-size:12px; color:#8A7873; margin-bottom:16px; line-height:1.7 }
+  .flow .steps{ list-style:none; counter-reset:s }
+  .flow .steps li{ position:relative; display:flex; gap:10px; align-items:flex-start;
+                   padding:7px 0 7px 4px; border-radius:9px; transition:background .25s linear }
+  .flow .steps li .n{ flex:none; width:20px; height:20px; border-radius:50%; margin-top:2px;
+                      display:grid; place-items:center; font-size:10.5px; font-weight:700;
+                      background:#fff; color:#B3A39D; box-shadow:0 1px 3px rgba(0,0,0,.07);
+                      transition:background .25s linear, color .25s linear, transform .3s var(--spring) }
+  .flow .steps li .t{ flex:1; min-width:0 }
+  .flow .steps li .t b{ display:block; font-size:13px; font-weight:620; color:#9C8A84;
+                        transition:color .25s linear }
+  .flow .steps li .t span{ display:block; font-size:11.5px; color:#B9AAA5 }
+  .flow .steps li.on{ background:#fff; box-shadow:0 2px 10px rgba(143,76,56,.09) }
+  .flow .steps li.on .n{ background:var(--primary); color:#fff; transform:scale(1.12) }
+  .flow .steps li.on .t b{ color:var(--on-surface) }
+  .flow .steps li.on .t span{ color:#8A7873 }
+  .flow .fbtns{ margin-top:16px; display:flex; gap:9px }
+  .flow .fbtns button{ flex:1; font:inherit; font-size:13px; font-weight:650; cursor:pointer;
+                       border:0; border-radius:11px; padding:11px 0;
+                       background:var(--primary); color:#fff;
+                       transition:transform .3s var(--spring) }
+  .flow .fbtns button.sec{ background:#fff; color:var(--primary);
+                           box-shadow:0 1px 5px rgba(143,76,56,.1) }
+  .flow .fbtns button:active{ transform:scale(.96) }
+  .flow .fbtns button.busy{ background:var(--dark) }
+  .flow .tip{ margin-top:16px; padding:13px 15px; background:#fff; border-radius:12px;
+              font-size:12px; line-height:1.72; box-shadow:0 2px 10px rgba(143,76,56,.07) }
+  .flow code{ background:#F6EEEB; padding:1px 5px; border-radius:4px; font-size:11.5px;
+              color:#8F4C38 }
+  .flow .mini{ font:inherit; font-size:12px; font-weight:650; cursor:pointer; border:0;
+               border-radius:9px; padding:7px 14px; margin-top:9px;
+               background:#F1E4E0; color:#8F4C38 }
+
+  .notes{ width:330px; flex:none; font-size:13px; line-height:1.75; color:#4A3B37 }
+  .notes h1{ font-size:18px; margin-bottom:4px; letter-spacing:-.01em }
+  .notes .sub{ font-size:12px; color:#8A7873; margin-bottom:18px }
+  .notes h3{
+    font-size:11.5px; letter-spacing:.09em; color:#A08B85;
+    margin:18px 0 7px; text-transform:uppercase;
+  }
+  .notes .kv{ display:flex; gap:9px; margin-bottom:9px; align-items:flex-start }
+  .notes .kv .k{
+    flex:none; width:42px; text-align:center; font-size:10.5px; font-weight:700;
+    background:#fff; border-radius:7px; padding:2px 0; color:var(--primary);
+    box-shadow:0 1px 3px rgba(0,0,0,.06);
+  }
+  .notes .kv .v{ flex:1; font-size:12.5px; color:#5C4A45 }
+  .notes code{
+    background:#fff; padding:1px 5px; border-radius:4px; font-size:11.5px;
+    color:#8F4C38; box-shadow:0 1px 2px rgba(0,0,0,.05);
+  }
+  .notes .tip{
+    margin-top:20px; padding:13px 15px; background:#fff; border-radius:12px;
+    font-size:12px; line-height:1.7; box-shadow:0 2px 10px rgba(143,76,56,.07);
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     App 模式 —— 手机壳拆掉，屏幕铺满
+     上面那套 .dev/.scr 是给电脑上并排看几个手机用的，真机上全不要。
+     ═══════════════════════════════════════════════════════════ */
+  html,body{ width:100%; height:100%; overflow:hidden; background:var(--bg) }
+  body{ display:block; padding:0; gap:0 }
+  .dev{ width:100%; height:100%; border-radius:0; padding:0;
+        background:transparent; box-shadow:none }
+  .scr{ border-radius:0 }
+  .notch{ display:none }
+  .flow{ display:none }
+  /* 真机上系统状态栏是系统画的，这一条只留呼吸空间；里面的字和图标全藏掉 */
+  .sbar{ height:12px; visibility:hidden }
+  /* 手机上别选中文字、别弹复制菜单 —— 输入框例外 */
+  *{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none }
+  input{ -webkit-user-select:text; user-select:text }
+
+  /* 一台设备都没有的时候 */
+  .dempty{ margin:6px 20px; padding:38px 20px; border-radius:22px; text-align:center;
+           font-size:13px; line-height:1.9; color:#A08E88; background:var(--surface) }
+
+  /* ═══ 扫码取景框里塞真相机 ═══ */
+  .vf{ background:#12100F; overflow:hidden }
+  .vf .cam{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+            display:block; background:#12100F; transition:opacity .3s linear }
+  #pScan.done .vf .cam{ opacity:.2 }
+  .vf .sline{ z-index:2 }
+  /* 扫不出来时的兜底 */
+  .mini{ margin-top:2px; border:0; background:none; font:inherit; font-size:12.5px;
+         color:#A08E88; text-decoration:underline; text-underline-offset:3px;
+         cursor:pointer; padding:6px 10px }
+  .manual{ position:absolute; inset:0; z-index:8; display:none;
+           align-items:center; justify-content:center; padding:0 26px;
+           background:rgba(26,17,15,.42) }
+  .manual.on{ display:flex }
+  .mbox{ width:100%; background:var(--bg); border-radius:24px; padding:24px 22px 18px;
+         display:flex; flex-direction:column; gap:9px }
+  .mt{ font-size:16px; font-weight:700; text-align:center }
+  .ms{ font-size:12px; color:#A08E88; text-align:center; line-height:1.7; margin-bottom:4px }
+  .mbox input{ width:100%; border:0; border-radius:15px; background:var(--surface);
+               padding:13px 16px; font:inherit; font-size:15px; font-weight:650;
+               letter-spacing:.04em; color:var(--on-surface); outline:none }
+
+  /* ═══ 水滴脸 ═══
+     眼睛和嘴用页面底色画，看起来就是从水滴上挖空的。
+     看的方向用 --gx/--gy 两个变量推，别的地方想推它只要改变量就行。 */
+  .plwrap{ margin:0 auto 18px; display:block; position:relative;
+           animation:breathe 3.8s ease-in-out infinite }
+  @keyframes breathe{ 0%,100%{ transform:scale(1) } 50%{ transform:scale(1.03,1.045) } }
+  .plogo{ --gx:0px; --gy:0px; --gs:1; --heat:0;
+          width:128px; height:168px; display:block; overflow:visible;
+          cursor:pointer; touch-action:manipulation }
+  /* 看的方向：位移 + 缩放。
+     只靠 translate 不够 —— 眼睛在 128px 宽的水滴里挪 3px，
+     看起来和待机没区别。往上看时同时缩一点（像在矁远处），
+     方向感才出来。 */
+  .plogo .eyes{ transform:translate(var(--gx), var(--gy)) scale(var(--gs,1));
+                transition:transform .38s var(--spring) }
+  .plogo .edot{ fill:var(--bg); transition:opacity .1s linear }
+  .plogo .ejoy, .plogo .esad{ fill:none; stroke:var(--bg); stroke-width:2.7;
+                              stroke-linecap:round; opacity:0;
+                              transition:opacity .12s linear }
+  .plogo .mouth{ fill:none; stroke:var(--bg); stroke-width:2.7; stroke-linecap:round;
+                 transition:d .34s var(--spring) }
+  .plogo .edot{ transform-box:fill-box; transform-origin:center;
+                transition:transform .12s ease-out, opacity .1s linear }
+
+  /* 往上看：移得比往下多，而且缩小 —— 眼睛小一圈更像在矁高处。
+     原来只有 -3.2px，在 128px 宽的水滴里根本看不出来。 */
+  .plogo.look-up{ --gy:-9px; --gs:.88 }
+  /* 往下看：保持小幅度。眼睛 cy=67、嘴在 y=80，
+     往下挪多了眼睛右缘就贴到嘴的起点（x=32）上，看着像哭。 */
+  .plogo.look-down{ --gy:3.6px }
+  .plogo.blink .edot{ transform:scaleY(.06) }
+
+  .plogo.ok .edot, .plogo.bad .edot{ opacity:0 }
+  .plogo.ok .ejoy{ opacity:1 }
+  .plogo.bad .esad{ opacity:1 }
+  .plogo.ok .mouth{ d:path("M30 79 q8 11 16 0") }
+  .plogo.bad .mouth{ d:path("M32 84.5 q6 -5.5 12 0") }
+
+  /* 挤一下再弹回来 —— yui540 那种手感全靠这一步 */
+  .plogo.ok{ animation:faceJoy .72s var(--spring) }
+  @keyframes faceJoy{
+    0%{ transform:scale(1,1) } 30%{ transform:scale(1.18,.84) }
+    58%{ transform:scale(.92,1.1) } 80%{ transform:scale(1.04,.98) }
+    100%{ transform:scale(1,1) }
+  }
+  .plogo.bad{ animation:faceNo .54s var(--spring) }
+  @keyframes faceNo{
+    0%,100%{ transform:translateX(0) rotate(0) }
+    18%{ transform:translateX(-6px) rotate(-4deg) }
+    42%{ transform:translateX(5px) rotate(3deg) }
+    66%{ transform:translateX(-3px) rotate(-1.6deg) }
+  }
+
+  /* ═══ 彩蛋：渐渐变红 ═══
+     --heat 0→1 由 JS 推（第 12 下起），JS 同时算出插值后的颜色直接写到
+     tip 的 inline style 上。
+
+     为什么不用 color-mix：WebView 里 CSS.supports('fill','color-mix(...)') 回 true，
+     但 getComputedStyle 拿到的是 rgb(0,0,0) —— SVG 的 fill 不吃 color-mix，
+     它只会在声明层说“我支持”，渲染时直接摆烂。
+     写 inline fill 还有个好处：transition:fill 能真的跑起来。 */
+  .plogo .tip{
+    transform-box:fill-box; transform-origin:bottom;
+    transition:fill .5s linear;
+  }
+
+  /* 被戳：挤压一下 */
+  .plogo.poke .tip{ animation:poke .42s var(--pop) }
+  @keyframes poke{
+    0%  { transform:scale(1,1) }
+    28% { transform:scale(1.16,.84) }
+    55% { transform:scale(.93,1.1) }
+    78% { transform:scale(1.04,.97) }
+    100%{ transform:scale(1,1) }
+  }
+  /* 生气：整个抖 */
+  .plogo.mad{ animation:madShake .4s ease-out }
+  @keyframes madShake{
+    0%,100%{ transform:translateX(0) }
+    15%{ transform:translateX(-5px) rotate(-3deg) }
+    35%{ transform:translateX(5px) rotate(3deg) }
+    55%{ transform:translateX(-4px) rotate(-2deg) }
+    75%{ transform:translateX(3px) rotate(1.5deg) }
+  }
+  /* 炸之前：鼓起来 */
+  .plogo.swell{ animation:swell .34s cubic-bezier(.3,1.4,.5,1) forwards }
+  @keyframes swell{
+    0%  { transform:scale(1) }
+    60% { transform:scale(1.22) }
+    100%{ transform:scale(1.3) }
+  }
+
+  /* ═══ 彩蛋：气泡 ═══ */
+  .bub{
+    position:absolute; left:50%; bottom:calc(100% + 14px);
+    transform:translateX(-50%) scale(.4) translateY(14px);
+    transform-origin:bottom center;
+    background:var(--dark); color:#FFF3EF;
+    font-size:13.5px; font-weight:650; line-height:1.42; letter-spacing:.2px;
+    padding:10px 15px; border-radius:15px; white-space:nowrap;
+    opacity:0; pointer-events:none;
+    box-shadow:0 8px 24px rgba(43,28,24,.28);
+    transition:transform .3s var(--spring), opacity .16s linear;
+    z-index:5;
+  }
+  .bub::after{
+    content:""; position:absolute; top:100%; left:50%; margin-left:-7px;
+    border:7px solid transparent; border-top-color:var(--dark); border-bottom:0;
+  }
+  .bub.on{ opacity:1; transform:translateX(-50%) scale(1) translateY(0) }
+  .bub.off{ opacity:0; transform:translateX(-50%) scale(.92) translateY(-4px);
+            transition:transform .13s ease-in, opacity .13s linear }
+  .bub.wide{ white-space:normal; width:210px; text-align:center; font-weight:600 }
+
+  /* ═══ 彩蛋：炸开 ═══
+     从水滴中心炸出去铺满全屏。clip-path 圆形扩散比 scale 好 ——
+     不会把底下的内容一起拉伸变形。
+     半径要够大：circle() 的百分比是相对「参考框对角线/√2」的，
+     圆心在 41% 高度处，到最远的角差不多要 120%，留余量给 170%。 */
+  .burst{
+    position:absolute; inset:0; z-index:30; pointer-events:none;
+    background:var(--danger);
+    clip-path:circle(0px at 50% 41%);
+    transition:clip-path .68s cubic-bezier(.28,.86,.36,1);
+  }
+  .burst.on{ clip-path:circle(170% at 50% 41%) }
+  /* 炸开瞬间的一圈白光 */
+  .flash{
+    position:absolute; inset:0; z-index:31; pointer-events:none;
+    background:radial-gradient(circle at 50% 41%, #FFF 0%, rgba(255,255,255,0) 46%);
+    opacity:0;
+  }
+  .flash.on{ animation:flash .5s ease-out }
+  @keyframes flash{ 0%{ opacity:1 } 100%{ opacity:0 } }
+
+  /* ═══ 当前账号 ═══
+     点标题就能看到登的是哪个手机号，也能退出。
+     起因是 /user/reg 对任意手机号都会静默新建账号，界面必须能看出登的是谁。
+
+     那枚小箭头和淡色胶囊是专门补的：原来只是一行灰字，没人看得出那是个按钮。 */
+  .acct{ border:0; background:none; font:inherit; text-align:left; cursor:pointer;
+         padding:0; margin-left:2px; display:flex; flex-direction:column; gap:2px }
+  .acct b{ font-size:19px; font-weight:700; letter-spacing:-.02em; color:var(--on-surface) }
+  .acct .who{ display:inline-flex; align-items:center; gap:3px;
+              padding:2px 7px 2px 8px; border-radius:999px;
+              background:rgba(143,76,56,.09);
+              transition:background .18s ease }
+  .acct:active .who{ background:rgba(143,76,56,.19) }
+  .acct .who i{ font-style:normal; font-size:10.5px; font-weight:600;
+                color:var(--primary); letter-spacing:.03em }
+  .acct .chev{ width:11px; height:11px; flex:none; color:var(--primary);
+               transition:transform .28s var(--spring) }
+  .acct[aria-expanded="true"] .chev{ transform:rotate(180deg) }
+  /* ═══ 启动时水滴长大 ═══ */
+  @keyframes dropBirth{
+    0%  { transform:scale(.18) translateY(26px); opacity:0 }
+    62% { transform:scale(1.07) translateY(0);   opacity:1 }
+    82% { transform:scale(.98) }
+    100%{ transform:scale(1) }
+  }
+  .plwrap.birth{ animation:dropBirth .68s var(--spring) both }
+  .dhint{ width:34px; height:45px; fill:#EADCD8 }
+  .dempty-t{ margin-top:12px }
+  .dadd{ margin-top:16px; width:150px }
+
+  /* ═══ 设备卡片：左滑 / 拖动 / 粉碎 ═══ */
+  /* dwrap 只管滑动窗口、裁切和「整条塌陷」。
+     ★ 背景和阴影不能挂在这层 —— 卡片让位是 translateY，上移的那张会钻进被拖
+     那一条的区域里，dwrap 如果自己有白底就会把它整个盖住（表现就是「其他卡片
+     都不见了」）。让卡片带着自己的底走。 */
+  .dwrap{
+    position:relative; border-radius:18px; margin-bottom:10px;
+    transition:height .24s cubic-bezier(.87,.05,.02,.97), opacity .16s linear;
+  }
+  /* 裁切只在「滑动中 / 已滑开 / 收回动画中」生效。
+     不能常开：拖动让位时卡片被 translateY 挪出容器，一裁整块内容就没了。
+     铺的那层底色是挡卡片底边抗锯齿透出来的 1px 红。 */
+  .dwrap.swiping, .dwrap.swiped, .dwrap.closing{
+    clip-path:inset(0 round 18px);
+    background:var(--bg);
+  }
+  .dwrap.dragging{ z-index:10 }
+  .dwrap.shiver{ animation:shiver .19s ease-in-out infinite alternate }
+
+  /* 卡片底下的删除按钮 —— 卡片往左一滑就露出来 */
+  .ddel{
+    position:absolute; right:0; top:1px; bottom:1px;
+    /* 红色必须一直填满「卡片右边缘 → 容器右边」，中间不能留缝，
+       所以宽度跟着滑动量走：106 = 88(按钮本身) + 18(藏到卡片底下)。
+       多伸出去的那 18px 被卡片盖住，正好把卡片右圆角挖掉的两个「月牙」补满 ——
+       看上去就是红色从卡片的圆角里咬进去。 */
+    width:calc(var(--sx, 0px) + 106px);
+    border:0; border-radius:0 18px 18px 0;
+    background:#E24B3F; color:#fff;
+    font:inherit; font-size:13px; font-weight:650; letter-spacing:.08em; cursor:pointer;
+    opacity:var(--rv,0);              /* ★ 静止时恒为 0，进门那一眼看不到它 */
+    transition:opacity .1s linear, background .15s linear;
+  }
+  .ddel:active{ background:#C93A2F }
+  /* 「删除」两个字必须钉在「露出来的那块红色」的正中间 —— 红块会随滑动变宽，
+     文字不能跟着整块居中，那样滑得越远它越往左，最后被卡片盖掉。 */
+  .ddel span{
+    position:absolute; right:0; top:0; bottom:0;
+    width:max(88px, var(--sx, 0px));
+    display:flex; align-items:center; justify-content:center;
+    /* 「删除」自己的皮筋：滑过 DEL_W 之后继续拉，字被横向拉长、纵向压细 */
+    transform:scaleX(var(--del-x, 1)) scaleY(var(--del-y, 1));
+    transition:transform .3s var(--spring);
+  }
+  .dwrap.swiping .ddel span{ transition:none }
+
+  /* 皮筋：左滑时把内容横向拉长、纵向压细。origin 放左边 ——
+     卡片是被右边「拽」着走的，左端该钉住不动。 */
+  .dcard .dshake{
+    display:flex; align-items:center; gap:13px; flex:1; min-width:0;
+    transform-origin:left center;
+    transform:scaleX(var(--sx-x, 1)) scaleY(var(--sx-y, 1));
+    transition:transform .3s var(--spring);
+  }
+  .dcard.gesturing .dshake{ transition:none }
+
+  .dcard{ margin-bottom:0; border-radius:18px; overflow:hidden }
+  /* 手指还在屏幕上时不要过渡，要绝对跟手 */
+  .dcard.gesturing{ transition:none !important }
+  .dcard.lifted{
+    position:relative; z-index:5;
+    box-shadow:0 12px 28px rgba(143,76,56,.22);
+  }
+
+  /* 确认弹窗里那个红按钮 */
+  .btn.danger{ background:#E24B3F; color:#fff }
+  .btn.danger:active{ background:#C93A2F }
+
+  /* 粉末 —— 整条（卡片 + 红色删除键）碎成的粒子。
+     主流做法是像素采样（元素画进 canvas、读每个像素的颜色、按密度抽样成粒子），
+     这里不引 canvas，改成「网格采样 + 按位置判色」。 */
+  .dust{
+    position:absolute; width:2.6px; height:2.6px; border-radius:50%;
+    pointer-events:none; z-index:6;
+    filter:blur(.25px);                /* 一点点柔化，不然是「点阵」不是「粉末」 */
+    animation:dustFly .78s cubic-bezier(.64,.08,1,.97) both;
+  }
+  @keyframes dustFly{
+    0%  { transform:translate(0,0) scale(1) rotate(0deg); opacity:1 }
+    55% { opacity:.9 }
+    100%{ transform:translate(var(--dx,0), var(--dy,60px)) scale(.35) rotate(var(--rz,0deg)); opacity:0 }
+  }
+
+  /* 抖的是整张卡片，不是卡片里的字。抖 dwrap 不抖 dcard ——
+     dcard 的 transform 已经被拖动位移占了，压一起会打架。 */
+  @keyframes shiver{
+    from{ transform:rotate(-.85deg) scale(1.012) }
+    to  { transform:rotate( .85deg) scale(1.012) }
+  }
+</style>
+</head>
+<body>
+
+<div class="dev">
+  <div class="notch"></div>
+  <div class="scr">
+
+    <!-- ══════ 设备列表 ══════ -->
+    <div class="page" id="pDev">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar">
+        <button class="acct" id="bAcct" type="button" aria-expanded="false">
+          <b>设备</b>
+          <span class="who"><i id="acct">未登录</i><svg class="chev" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"
+            stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>
+        </button>
+        <span class="sp"></span>
+        <div class="ib" id="bAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></div>
+      </div>
+      <div class="dlist" id="dlist"></div>
+
+      <div class="manual" id="rmBox">
+        <div class="mbox">
+          <div class="mt">删掉这台设备？</div>
+          <div class="ms"><span id="rmName">这台设备</span></div>
+          <button class="btn danger" id="bRmOk" type="button"><span class="lb">删掉它</span></button>
+          <button class="btn dark" id="bRmNo" type="button"><span class="lb">算了</span></button>
+        </div>
+      </div>
+
+      <div class="manual" id="acctBox">
+        <div class="mbox">
+          <div class="mt">当前账号</div>
+          <div class="ms" id="acctNo">—</div>
+          <button class="btn fill" id="bLogout" type="button"><span class="lb">退出登录</span></button>
+          <button class="btn dark" id="bAcctNo" type="button"><span class="lb">算了</span></button>
+        </div>
+      </div>
+
+      <div class="tabbar">
+        <button class="tb on" data-t="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2c0 0 6 6.6 6 10.3a6 6 0 1 1-12 0c0-3.7 6-10.3 6-10.3z"/></svg><span>设备</span></button>
+        <button class="tb" data-t="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8.5 8.5h7M8.5 12.5h7M8.5 16.5h4"/></svg><span>订单</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 订单页 · 方案 C 时间轴 ══════ -->
+    <div class="page hide" id="pOrder">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar"><h2 style="margin-left:2px">订单</h2></div>
+
+      <div class="obody">
+        <div class="osum">
+          <div class="left">
+            <div class="oamt"><span class="ocur">&yen;</span><span class="onum" id="oNum"></span></div>
+            <div class="osub" id="oSub"></div>
+          </div>
+          <div class="oyears" id="oYears"></div>
+        </div>
+        <div class="oysum" id="oYsum"></div>
+        <div class="tl" id="oTl"></div>
+      </div>
+
+      <div class="oload"><span class="spin"></span>正在拉取账单…</div>
+
+      <div class="oempty">
+        <svg class="odrop" id="oDrop" viewBox="0 0 76 100">
+          <path class="oskin" d="M 38 6 C 46 32 68 44 68 62 C 68 82 54 94 38 94 C 22 94 8 82 8 62 C 8 44 30 32 38 6 Z"/>
+          <path class="eyel" d="M24 66 h9 M43 66 h9" fill="none" stroke="#B7A29C" stroke-width="2.6" stroke-linecap="round"/>
+          <circle class="eyedot" cx="28.5" cy="66" r="3.4" fill="#7E6C66"/>
+          <circle class="eyedot" cx="47.5" cy="66" r="3.4" fill="#7E6C66"/>
+        </svg>
+        <div class="ohint">&hellip;还没接过水</div>
+      </div>
+
+      <div class="tabbar">
+        <button class="tb on" data-t="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.2c0 0 6 6.6 6 10.3a6 6 0 1 1-12 0c0-3.7 6-10.3 6-10.3z"/></svg><span>设备</span></button>
+        <button class="tb" data-t="1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8.5 8.5h7M8.5 12.5h7M8.5 16.5h4"/></svg><span>订单</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 接水页 ══════ -->
+    <div class="page" id="pWater">
+      <div class="halo" id="halo"></div>
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar">
+        <div class="bk" id="bk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <h2>接水</h2>
+      </div>
+
+      <div class="stagewrap" id="wrap">
+        <svg class="ring" viewBox="0 0 200 200">
+          <circle class="dots" cx="100" cy="100" r="78"/>
+          <circle class="prog" cx="100" cy="100" r="78"/>
+          <circle class="pip p1" cx="100" cy="22"  r="4"/>
+          <circle class="pip p2" cx="167.5" cy="139" r="4"/>
+          <circle class="pip p3" cx="32.5"  cy="139" r="4"/>
+        </svg>
+        <div class="orbit"><i></i></div>
+
+        <div class="core">
+          <svg class="lock" viewBox="0 0 76 92">
+            <path class="shackle" d="M22 42 V26 A16 16 0 0 1 54 26 V42"/>
+            <path class="lbody" d="M 38 42 C 62 42 64 44 64 63 C 64 82 62 84 38 84 C 14 84 12 82 12 63 C 12 44 14 42 38 42 Z"/>
+            <g class="lface">
+              <path class="eyeline" d="M27 62 Q31.5 57.6 36 62"/>
+              <path class="eyeline" d="M40 62 Q44.5 57.6 49 62"/>
+              <circle class="eyedot" cx="31.5" cy="61" r="3.7"/>
+              <circle class="eyedot" cx="44.5" cy="61" r="3.7"/>
+              <path class="mouth" d="M33 72 Q38 72 43 72"/>
+            </g>
+          </svg>
+        </div>
+
+        <div class="burst" id="burst">
+          <span class="wave w1"></span>
+          <span class="wave w2"></span>
+          <span class="ray"></span><span class="ray"></span><span class="ray"></span><span class="ray"></span>
+          <span class="ray"></span><span class="ray"></span><span class="ray"></span><span class="ray"></span>
+        </div>
+      </div>
+
+      <div class="msg" id="msg">
+        <div class="big" id="mBig">设备已锁定</div>
+        <div class="sm" id="mSm">解锁后机器上的按钮才会生效,解锁本身不扣费</div>
+      </div>
+
+      <div class="meta">
+        <span id="mDev">1号楼西热水</span>
+        <span><b>0.011</b><span class="unit">元/100mL</span></span>
+      </div>
+
+      <div class="foot">
+        <button class="btn fill" id="bUnlock"><span class="lb">解锁设备</span></button>
+        <button class="btn dark" id="bEnd" disabled><span class="lb">结束接水</span></button>
+      </div>
+
+    </div>
+
+    <!-- ══════ 登录 ══════ -->
+    <div class="page" id="pLogin">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="lwrap">
+        <div class="plwrap">
+          <div class="bub" id="bub"></div>
+          <svg class="plogo" id="plogo" viewBox="0 0 76 100">
+            <path class="tip" d="M 38 6 C 46 32 68 44 68 62 C 68 82 54 94 38 94 C 22 94 8 82 8 62 C 8 44 30 32 38 6 Z"/>
+            <g class="eyes">
+              <ellipse class="edot" cx="28" cy="67" rx="3.7" ry="4.7"/>
+              <ellipse class="edot" cx="48" cy="67" rx="3.7" ry="4.7"/>
+              <path class="ejoy" d="M23.5 69.5 q4.5 -6.5 9 0"/>
+              <path class="ejoy" d="M43.5 69.5 q4.5 -6.5 9 0"/>
+              <path class="esad" d="M23.5 63.5 l9 8"/>
+              <path class="esad" d="M32.5 63.5 l-9 8"/>
+              <path class="esad" d="M43.5 63.5 l9 8"/>
+              <path class="esad" d="M52.5 63.5 l-9 8"/>
+            </g>
+            <path class="mouth" d="M32 80 q6 5 12 0"/>
+          </svg>
+        </div>
+        <div class="ptitle">接水</div>
+        <div class="pform">
+          <label class="pfield"><span class="lbl">手机号</span>
+            <input id="iPhone" inputmode="numeric"></label>
+          <label class="pfield"><span class="lbl">验证码</span>
+            <span class="crow">
+              <input id="iCode" inputmode="numeric">
+              <button class="sendbtn" id="bSend" type="button">发送验证码</button>
+            </span></label>
+          <button class="btn fill" id="bLogin"><span class="lb">登 录</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════ 扫码加设备 ══════ -->
+    <div class="page" id="pScan">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar"><h2 style="margin-left:2px">添加设备</h2></div>
+      <div class="scanwrap">
+        <div class="vf">
+          <video class="cam" id="cam" playsinline muted></video>
+          <span class="c tl"></span><span class="c tr"></span>
+          <span class="c bl"></span><span class="c br"></span>
+          <span class="qrmark">QR</span>
+          <span class="sline"></span>
+        </div>
+        <div class="shint">把机器上的二维码放进取景框</div>
+        <button class="mini" id="bManual" type="button">扫不出来？手动输设备号</button>
+      </div>
+
+      <div class="manual" id="manual">
+        <div class="mbox">
+          <div class="mt">手动输设备号</div>
+          <div class="ms">机器贴纸上那串数字，一般是 15 位</div>
+          <input id="iSn" inputmode="numeric" placeholder="输入机器上的 15 位编号">
+          <button class="btn fill" id="bSnOk" type="button"><span class="lb">就用这台</span></button>
+          <button class="btn dark" id="bSnNo" type="button"><span class="lb">算了</span></button>
+        </div>
+      </div>
+      <div class="sfound">
+        <div class="sf">
+          <span class="dot"></span>
+          <div class="i"><div class="n" id="sfName">—</div>
+            <div class="p" id="sfSub">—</div></div>
+        </div>
+        <button class="btn fill" id="bAddDev"><span class="lb">添加这台设备</span></button>
+      </div>
+      <div class="foot">
+        <button class="btn dark" id="bScanBack"><span class="lb">取消</span></button>
+      </div>
+    </div>
+
+    <!-- ══════ 消费汇总 ══════ -->
+    <div class="page" id="pSummary">
+      <div class="sbar"><span>9:41</span>
+        <span class="icons">
+          <svg width="17" height="11" viewBox="0 0 17 11" fill="currentColor"><rect x="0" y="7" width="2.6" height="4" rx="1"/><rect x="4.4" y="5" width="2.6" height="6" rx="1"/><rect x="8.8" y="2.6" width="2.6" height="8.4" rx="1"/><rect x="13.2" y="0" width="2.6" height="11" rx="1" opacity=".35"/></svg>
+          <svg width="15" height="11" viewBox="0 0 15 11" fill="currentColor"><path d="M7.5 9.5 5.6 7.4a2.8 2.8 0 0 1 3.8 0zM3.4 5.2 1.6 3.3a8.5 8.5 0 0 1 11.8 0l-1.8 1.9a6 6 0 0 0-8.2 0z"/></svg>
+          <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".6" y=".6" width="21" height="10.8" rx="3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.8" fill="currentColor"/><path d="M23.2 4.2v3.6a2 2 0 0 0 0-3.6z" fill="currentColor" opacity=".4"/></svg>
+        </span>
+      </div>
+      <div class="appbar">
+        <div class="bk" id="bkS"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+        <h2>消费汇总</h2>
+      </div>
+      <div class="swrap">
+        <div class="snum"><small>&yen;</small><span class="onum tight" id="sNum"></span></div>
+        <div class="slab">本月总支出</div>
+        <div class="scards">
+          <div class="sc" style="--dl:120ms"><div class="k">接水次数</div><div class="v" id="sCnt">&mdash;</div></div>
+          <div class="sc" style="--dl:190ms"><div class="k">平均每次</div><div class="v" id="sAvg">&mdash;</div></div>
+        </div>
+        <div class="scards" style="margin-top:10px">
+          <div class="sc wide" style="--dl:260ms"><div class="k">最常去的设备</div>
+            <div class="v" id="sTop">&mdash;</div></div>
+        </div>
+        <div class="sblock">
+          <h4>近 6 个月<em>示例数据</em></h4>
+          <div class="mbars" id="mBars"></div>
+          <div class="mlabs" id="mLabs"></div>
+        </div>
+        <div class="sblock">
+          <h4>按设备</h4>
+          <div id="sRank"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提示条放在最外层 —— 它得在任何一页上都看得见,不能被某一页藏起来 -->
+    <div class="toast" id="toast"></div>
+    <div class="burst" id="burst"></div>
+    <div class="flash" id="flash"></div>
+
+    <!-- 卡片放大用的替身,和它下面那层遮罩 -->
+    <div class="scrim" id="scrim"></div>
+    <div class="magic" id="magic"></div>
+
+  </div>
+</div>
+
+<!-- ══════ 说明板 ══════ -->
+<div class="flow">
+  <h1>完整流程 demo</h1>
+  <div class="sub">从登录一路点到消费汇总。<br>也可以按下面的「自动演一遍」，看它自己走完六个步骤 —— 中途你碰一下手机就会停。</div>
+  <ol class="steps" id="steps"></ol>
+  <div class="fbtns">
+    <button id="bAuto">自动演一遍</button>
+    <button id="bReset" class="sec">重来</button>
+  </div>
+  <div class="tip">
+    <strong>看的时候注意这几处：</strong><br>
+    · 设备卡片是<strong>错落进场</strong>的（每张差 90ms），不是一起出现<br>
+    · 右上的「+」、设备卡片、金额块，点下去都是<strong>从那一个元素本身长成整页</strong>；背景同时压暗 32%<br>
+    · 登录页在发验证码：点「发送验证码」会看到 60 秒倒计时，演示里约 1 秒后码会自动填上<br>
+    · 订单页<strong>没有详情页</strong>了，那一行点了没反应 —— 结果已经在行上写完了<br>
+    · 汇总页的数字<strong>全部从订单明细算出来</strong>，不是另写一套假数字
+  </div>
+  <div class="tip">
+    <strong>空状态：</strong>没有订单时是那只睡觉的水滴。<br>
+    <button class="mini" id="demoEmpty">看空状态</button>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ══════════════ 提示条 ══════════════ */
+function toast(text){
+  const t = $('toast');
+  t.textContent = text;
+  t.classList.remove('on','off');
+  void t.offsetWidth;
+  t.classList.add('on');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => {
+    t.classList.remove('on');
+    t.classList.add('off');
+  }, 1750);
+}
+
+/* ══════════════ 设备列表 ══════════════ */
+const ARROW = '<span class="arw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+              'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+              '<path d="M9 6l6 6-6 6"/></svg></span>';
+
+const esc = t => String(t == null ? '' : t)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+/* 机器到底空不空，这行要说真话。
+   workStatus 是原生那边现问的 goods/water/sync（枚举见 docs/API.md）。 */
+function devState(d){
+  if(d.off) return '离线';
+  switch(d.workStatus){
+    case 1:  return '空闲';
+    case 2:  return '使用中';
+    case 3:  return '别人在用';
+    default: return '状态未知';
+  }
+}
+
+function deviceSub(d){
+  const price = d.price ? d.price + ' 元/100mL' : '';
+  const state = devState(d);
+  return price ? price + ' · ' + state : state;
+}
+
+function renderDevices(){
+  const box = $('dlist');
+  if(!DEV.length){
+    /* 一只水滴 + 一个按钮 —— 比一句灰字友好 */
+    box.innerHTML =
+      '<div class="dempty">' +
+        '<svg class="dhint" viewBox="0 0 76 100">' +
+          '<path d="M 38 6 C 46 32 68 44 68 62 C 68 82 54 94 38 94 C 22 94 8 82 8 62 C 8 44 30 32 38 6 Z"/>' +
+        '</svg>' +
+        '<div class="dempty-t">还没有设备</div>' +
+        '<button class="btn fill dadd" id="bEmptyAdd" type="button"><span class="lb">扫一扫</span></button>' +
+      '</div>';
+    setTimeout(() => {
+      const b = $('bEmptyAdd');
+      if(b) b.addEventListener('click', () => Android.askCamera());
+    }, 0);
+    return;
+  }
+  box.innerHTML = DEV.map((d, i) =>
+    '<div class="dwrap" data-d="' + i + '">' +
+      '<button class="ddel" type="button"><span>删除</span></button>' +
+      '<div class="dcard" data-d="' + i + '">' +
+        '<div class="dshake">' +
+          '<span class="dot' + (d.off ? ' off' : '') + '"></span>' +
+          '<div class="i"><div class="n">' + esc(d.name || '未命名设备') + '</div>' +
+          '<div class="p">' + esc(deviceSub(d)) + '</div></div>' +
+        '</div>' + ARROW +
+      '</div>' +
+    '</div>').join('');
+  box.querySelectorAll('.dwrap').forEach(bindCardGestures);
+
+  /* 卡片 CSS 默认 opacity:0，靠 .in 才浮上来。DOM 是这里重建的，所以必须在这里
+     补一次 —— 否则排序/删除之后列表会整片空白（卡片看不见，只剩底下那个红色
+     删除按钮露在外面）。需要错落入场的地方（进列表、拉数据）交给 enterDev()：
+     它会把 .in 摘掉重放，所以两边不会打架。 */
+  requestAnimationFrame(() => {
+    box.querySelectorAll('.dcard').forEach(c => c.classList.add('in'));
+  });
+}
+/* 卡片的错落入场不在这里播 —— 等登录之后再播，否则用户在登录页时它已经演完了 */
+
+/* ══════════════ 卡片扩展 ══════════════ */
+/* 不做左右推 —— 底部 tab 已经把"设备"和"订单"分成左右两区,
+   接水页既不属于左也不属于右,它是"从设备卡片里长出来的"。
+   做法:放一个白色替身 .magic 精确盖住被点的卡片,再让它长到整页大小;
+   长到 84% 时切换页面,最后让替身淡出 —— 因为两层都是白的,接缝看不出来。 */
+const scrEl = document.querySelector('.scr');
+let originRect = null;
+let lastCard   = null;
+
+function rectIn(sel){
+  const sc = scrEl.getBoundingClientRect();
+  const r  = sel.getBoundingClientRect();
+  return { left: r.left - sc.left, top: r.top - sc.top, w: r.width, h: r.height };
+}
+
+let originRadius = 18;
+
+function expandFrom(card, onCovered, enteringId, panelBg, radius){
+  originRadius = (radius === undefined) ? 18 : radius;
+  const sc = scrEl.getBoundingClientRect();
+  const o  = rectIn(card);
+  originRect = o;
+  const m = $('magic');
+
+  /* 1) 无过渡地摆到卡片位置,并把卡片克隆进来 */
+  m.innerHTML = '';
+  m.appendChild(card.cloneNode(true));
+
+  m.style.transition = 'none';
+  m.style.display = 'block';
+  m.style.opacity = '1';
+  m.style.left = o.left + 'px';  m.style.top = o.top + 'px';
+  m.style.width = o.w + 'px';    m.style.height = o.h + 'px';
+  m.style.borderRadius = originRadius + 'px';
+  m.style.boxShadow = '0 1px 7px rgba(143,76,56,.09)';
+  /* 魔板的底色要跟"被点的东西"周围一致，不然会长出一块颜色不对的方块 */
+  m.style.background = panelBg || 'var(--surface)';
+  m.dataset.from = JSON.stringify(o);        /* 留个底,便于校验 */
+  void m.offsetWidth;                       /* 强制回流,否则下一帧的改动会被合并掉 */
+
+  /* 2) 再让它长到整页 */
+  m.style.transition = '';
+  requestAnimationFrame(() => {
+    m.style.left = '0px';  m.style.top = '0px';
+    m.style.width = sc.width + 'px';  m.style.height = sc.height + 'px';
+    m.style.borderRadius = '0px';
+    m.style.boxShadow = '0 1px 7px rgba(143,76,56,0)';   /* 影子化开 */
+    $('scrim').style.opacity = '.32';                    /* 背景压暗 32% */
+    const cl = m.firstElementChild;
+    if(cl) cl.style.opacity = '0';
+  });
+
+  /* 300ms 形状走完 → 切页 → 新页内容淡入 */
+  if(enteringId) setTimeout(() => { $(enteringId).classList.remove('entering') }, 300);
+
+  /* 形状 300ms 走完。此刻魔板已经盖满,所以这一帧可以无声地收掉遮罩并换页 ——
+     遮罩要压的是"底下的起始页",不该压着还没露面的接水页。 */
+  setTimeout(() => {
+    $('scrim').style.transition = 'none';
+    $('scrim').style.opacity = '0';
+    onCovered();
+  }, 300);
+  setTimeout(() => { m.style.opacity = '0' }, 310);
+  setTimeout(() => {
+    m.style.display = 'none'; m.style.opacity = '1'; m.innerHTML = '';
+    $('scrim').style.transition = '';
+  }, 470);
+}
+
+function collapseTo(onCovered){
+  if(!originRect){ onCovered && onCovered(); return; }
+  const sc = scrEl.getBoundingClientRect();
+  const o  = originRect;
+  const m  = $('magic');
+
+  /* 关键顺序:魔板先"无声无息"铺满(它是不透明的,盖得住) →
+     铺满的那一帧立刻切页 → 然后才开始缩小。
+     原先是 420ms 之后才切页,于是缩小的过程中露出来的全是接水页,
+     缩完才"啪"地跳成设备页 —— 那一下就是不连贯的来源。 */
+  m.innerHTML = '';
+  if(lastCard) m.appendChild(lastCard.cloneNode(true));   /* 缩小的一路上,卡片的样子都在 */
+  /* 返回不压暗:魔板本身从全屏缩小,它自己就是覆盖层;
+     而且用户是要回去看设备列表,把它压暗是错的。 */
+  m.style.transition = 'none';
+  m.style.display = 'block';
+  m.style.opacity = '1';
+  m.style.left = '0px';  m.style.top = '0px';
+  m.style.width = sc.width + 'px';  m.style.height = sc.height + 'px';
+  m.style.borderRadius = '0px';
+  m.style.boxShadow = 'none';
+  void m.offsetWidth;
+
+  onCovered && onCovered();          /* 这一帧就换页,魔板挡着看不见 */
+
+  /* 返回比进入快:Material 用 250ms 对 300ms */
+  m.style.transition = 'left .25s cubic-bezier(.4,0,.2,1), top .25s cubic-bezier(.4,0,.2,1), ' +
+                       'width .25s cubic-bezier(.4,0,.2,1), height .25s cubic-bezier(.4,0,.2,1), ' +
+                       'border-radius .25s cubic-bezier(.4,0,.2,1), box-shadow .25s cubic-bezier(.4,0,.2,1), ' +
+                       'opacity .16s linear';
+  requestAnimationFrame(() => {
+    m.style.left = o.left + 'px';  m.style.top = o.top + 'px';
+    m.style.width = o.w + 'px';    m.style.height = o.h + 'px';
+    m.style.borderRadius = originRadius + 'px';
+    /* 阴影和真卡片保持一致,万一有一帧重叠也不会显"重" */
+    m.style.boxShadow = '0 1px 7px rgba(143,76,56,.07)';
+  });
+
+  /* 280ms 时曲线早已收敛(偏差 0),魔板和真卡片完全重合 ——
+     这一帧直接撤掉它,不做淡出。
+     以前这里淡出 0.16s,那段时间两层互相透,才是"晃"的来源。 */
+  setTimeout(() => {
+    m.style.display = 'none'; m.style.opacity = '1'; m.innerHTML = '';
+    m.style.transition = '';
+  }, 280);
+}
+
+/* ── 底部 tab ── */
+let curTab = 0;
+
+document.querySelectorAll('.tb').forEach(t => t.addEventListener('click', () => {
+  const idx = +t.dataset.t;
+  if(idx === curTab) return;                       /* 同一个 tab 不重播 */
+  curTab = idx;
+  document.querySelectorAll('.tb').forEach(o => {
+    const on = +o.dataset.t === idx;
+    o.classList.toggle('on', on);
+    if(on){ o.classList.remove('jelly'); void o.offsetWidth; o.classList.add('jelly'); }
+  });
+  $('pDev').classList.toggle('hide', idx !== 0);
+  $('pOrder').classList.toggle('hide', idx !== 1);
+  if(idx === 1){ playOrders(); setStep('order'); } else { setStep('dev'); }
+}));
+
+/* ══════════════ 订单页 · 方案 C ══════════════ */
+/* 日期分组。金额不写死，从明细加出来 —— 免得改了明细忘了改总数。 */
+let ORDERS = [];
+/* 原生给的是扁平订单，这里先按天分组。
+   分组的形状跟演示版一样，所以汇总页不用改。
+   额外存一个 y（年份）—— 年份滚轮靠它分组。 */
+function setOrders(list){
+  const byDay = new Map();
+  list.forEach(o => {
+    const amt = +o.amt || 0;
+    /* 0 元的订单不算 —— 接口里大量 payPrice 是 "0.00" 的（免费/已取消），
+       金额上不影响求和，但会把「N 单」撑虚。只统计真花了钱的。 */
+    if(amt <= 0) return;
+    const key = o.dateKey || '';
+    const p = key.split('-');
+    const y = +p[0] || 0, mon = +p[1] || 0;
+    /* 年月解析不出来就不要 —— 否则滚轮里会冒出一个「0 年」、
+       月份块里冒出一个「0 月」，看着像 bug。 */
+    if(y <= 0 || mon <= 0) return;
+    if(!byDay.has(key)) byDay.set(key, { date:o.date, y, mon, items:[] });
+    byDay.get(key).items.push({ dev:o.dev || '未知设备', time:o.time, amt });
+  });
+  ORDERS = [...byDay.entries()]
+    .sort((a, b) => a[0] < b[0] ? 1 : -1)             /* 新的在上面 */
+    .map(([, v]) => v);
+  buildYears();
+}
+
+/* 从 ORDERS 派生「按年分组」。年份滚轮、当年小计、年度流水都吃它。 */
+let YEARS = [];
+function buildYears(){
+  const map = new Map();
+  ORDERS.forEach(g => {
+    if(!map.has(g.y)) map.set(g.y, []);
+    map.get(g.y).push(g);
+  });
+  YEARS = [...map.entries()]
+    .sort((a, b) => b[0] - a[0])                      /* 新的在上面 */
+    .map(([y, days]) => {
+      const items = [];
+      days.forEach(d => d.items.forEach(it => items.push(it)));
+
+      /* 再按月份分一层 —— 一年八个学期月，不分的话一百多行连成一片 */
+      const mm = new Map();
+      days.forEach(d => {
+        if(!mm.has(d.mon)) mm.set(d.mon, []);
+        mm.get(d.mon).push(d);
+      });
+      const months = [...mm.entries()]
+        .sort((a, b) => b[0] - a[0])
+        .map(([mon, ds]) => {
+          const mi = [];
+          ds.forEach(d => d.items.forEach(it => mi.push(it)));
+          return { mon, days:ds, items:mi,
+                   sum:Math.round(mi.reduce((a, b) => a + b.amt, 0) * 100) / 100 };
+        });
+
+      return { y, days, items, months,
+               sum:Math.round(items.reduce((a, b) => a + b.amt, 0) * 100) / 100 };
+    });
+}
+
+const money = n => '&yen;' + n.toFixed(2);
+
+/* 年份滚轮每一格的高度 —— 跟 CSS 里 .oyears b 的 44px 对齐 */
+const Y_H = 44;
+let selYear = null;
+
+function buildOrders(){
+  const flat = [];
+  ORDERS.forEach(g => g.items.forEach(it => flat.push({ ...it, date:g.date })));
+
+  const sum = Math.round(flat.reduce((a, b) => a + b.amt, 0) * 100) / 100;
+
+  /* 金额：每一位一个滑窗，延迟 0/50/100… 逐位落下 */
+  const num = $('oNum'); num.innerHTML = '';
+  [...sum.toFixed(2)].forEach((ch, i) => {
+    const el = document.createElement('i');
+    el.style.setProperty('--dl', (i * 50) + 'ms');
+    const u = document.createElement('u');
+    u.textContent = ch;
+    el.appendChild(u); num.appendChild(el);
+  });
+  /* 这里的总额是「全部」，不随年份变 */
+  $('oSub').innerHTML = '全部 · ' + ORDERS.length + ' 天 · ' + flat.length + ' 单' +
+    '<span class="more">看汇总 ›</span>';
+
+  if(!YEARS.length) return;
+  if(selYear === null || !YEARS.some(v => v.y === selYear)) selYear = YEARS[0].y;
+
+  /* 年份滚轮。上下各垫一格，首尾才滚得到正中间。 */
+  const yr = $('oYears');
+  yr.innerHTML = '<div class="pad"></div>' +
+    YEARS.map((v, i) =>
+      '<b data-y="' + v.y + '" class="' + (v.y === selYear ? 'on' : '') +
+        '" style="--dl:' + (i * 70 + 180) + 'ms">' + v.y +
+        '<span class="yr">年</span></b>').join('') +
+    '<div class="pad"></div>';
+
+  buildYear();
+  requestAnimationFrame(() => {
+    yr.scrollTop = Math.max(0, YEARS.findIndex(v => v.y === selYear)) * Y_H;
+    paintWheel();
+  });
+}
+
+/* 只画选中的那一年 */
+function buildYear(){
+  const v = YEARS.find(x => x.y === selYear);
+  if(!v) return;
+
+  $('oYsum').innerHTML =
+    '<span class="y">' + v.y + ' 年</span>' +
+    '<span class="days">' + v.days.length + ' 天 · ' + v.items.length + ' 单</span>' +
+    '<span class="tot"><u>' + money(v.sum) + '</u></span>';
+
+  /* 换年时重新决定展开哪个月 —— 默认只开最新那个 */
+  if(openMonY !== v.y){
+    openMon.clear();
+    openMonY = v.y;
+    if(v.months.length) openMon.add(v.months[0].mon);
+  }
+
+  $('oTl').innerHTML = v.months.map(m => {
+    const open = openMon.has(m.mon);
+    let t = 60, html = '<div class="spine"></div>';
+    m.days.forEach(g => {
+      const dsum = g.items.reduce((a, b) => a + b.amt, 0);
+      html += '<div class="odate" style="--dl:' + t + 'ms">' +
+                '<i style="--dl:' + t + 'ms"></i>' + g.date +
+                '<span class="dsum" style="--dl:' + (t + 80) + 'ms"><u>' + money(dsum) + '</u></span>' +
+              '</div>';
+      t += 130;
+      g.items.forEach(it => {
+        html += '<div class="orow" style="--dl:' + t + 'ms">' +
+                  '<span><b>' + it.dev + '</b><small>' + it.time + '</small></span>' +
+                  '<em>' + money(it.amt) + '</em></div>';
+        t += 75;
+      });
+    });
+    return '<div class="ymon' + (open ? ' open' : '') + '" data-m="' + m.mon + '">' +
+             '<button class="mtop" type="button">' +
+               '<span class="mon">' + m.mon + ' 月</span>' +
+               '<span class="days">' + m.days.length + ' 天 · ' + m.items.length + ' 单</span>' +
+               '<span class="tot">' + money(m.sum) + '</span>' +
+               '<svg class="arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>' +
+             '</button>' +
+             '<div class="mbody"><div class="inner"><div class="tl">' + html + '</div></div></div>' +
+           '</div>';
+  }).join('');
+}
+
+/* 点月份头：独立开关，不强制手风琴 */
+let openMon = new Set();
+let openMonY = null;
+$('oTl').addEventListener('click', e => {
+  const btn = e.target.closest('.mtop');
+  if(!btn) return;
+  const w = btn.closest('.ymon');
+  const mon = +w.dataset.m;
+  if(openMon.has(mon)){
+    openMon.delete(mon);
+    w.classList.remove('open');
+  } else {
+    openMon.add(mon);
+    w.classList.add('open');
+  }
+});
+
+/* 滚轮：手指抬起才确认。
+   原来用 scroll 停止后 90ms 就切 —— 手指慢慢滑、中途停一下，就提前切了。
+   现在分开：滚动过程中只把选中的年份标出来（不变内容），
+   等抬手、并且吸附动画走完（260ms）才真正换内容。 */
+function commitYear(){
+  const yr = $('oYears');
+  if(!yr || !YEARS.length) return;
+  const i = Math.round(yr.scrollTop / Y_H);
+  const v = YEARS[i];
+  if(!v) return;
+
+  yr.querySelectorAll('b').forEach(b => b.classList.toggle('on', +b.dataset.y === v.y));
+  if(v.y === selYear) return;
+  selYear = v.y;
+
+  /* 换年：旧内容快出，新的慢入。
+     注意这里不能调 playOrders() —— 它会重播整个 #pOrder.play 的动画，
+     连顶部的总额也重新逐位落下。总额根本没变，闪一下反而像出错了。 */
+  const tl = $('oTl'), ys = $('oYsum');
+  tl.classList.add('out'); ys.classList.add('out');
+  setTimeout(() => {
+    tl.classList.remove('out'); ys.classList.remove('out');
+    document.querySelector('.obody').scrollTop = 0;
+    buildYear();
+    replayYear();
+  }, 140);
+}
+
+/* 只重播当年那一块的入场，不碰顶部总额 */
+function replayYear(){
+  $('oTl').querySelectorAll('.ymon, .odate, .orow, .mtop, .arw').forEach(el => {
+    el.style.animation = 'none';
+    void el.offsetWidth;
+    el.style.animation = '';
+  });
+}
+
+/* 「小 大 小」：按每项离容器中心的距离算缩放，滚动中连续变化。
+   纯 CSS 做不到这个 —— 只有「选中/未选中」两种状态，中间会跳一下。 */
+function paintWheel(){
+  const yr = $('oYears');
+  if(!yr) return;
+  /* 用 rect 算，不用 offsetTop —— .oyears 不是定位祖先，offsetTop 会算到别处去 */
+  const r = yr.getBoundingClientRect();
+  const mid = r.top + r.height / 2;
+  yr.querySelectorAll('b').forEach(b => {
+    const br = b.getBoundingClientRect();
+    const d = Math.abs(br.top + br.height / 2 - mid) / Y_H;   /* 距离，单位是「几格」 */
+    b.style.setProperty('--k', Math.max(0, 1 - d * .62).toFixed(3));
+  });
+}
+
+/* 滚动中只高亮 + 改缩放，不动内容 */
+let wheelRaf = 0;
+$('oYears').addEventListener('scroll', () => {
+  const yr = $('oYears');
+  const v = YEARS[Math.round(yr.scrollTop / Y_H)];
+  if(v) yr.querySelectorAll('b').forEach(b => b.classList.toggle('on', +b.dataset.y === v.y));
+  /* rAF 节流 —— scroll 一帧可能触发好几次 */
+  if(wheelRaf) return;
+  wheelRaf = requestAnimationFrame(() => { wheelRaf = 0; paintWheel(); });
+}, { passive:true });
+
+/* 抬手 → 等吸附走完再确认 */
+let yrT = null;
+$('oYears').addEventListener('touchend', () => {
+  clearTimeout(yrT);
+  yrT = setTimeout(commitYear, 260);
+}, { passive:true });
+
+/* 鼠标滚轮 / 触控板：停 320ms 当作确认 */
+$('oYears').addEventListener('wheel', () => {
+  clearTimeout(yrT);
+  yrT = setTimeout(commitYear, 320);
+}, { passive:true });
+
+/* 点年份也能跳过去 */
+$('oYears').addEventListener('click', e => {
+  const b = e.target.closest('b');
+  if(!b) return;
+  const i = YEARS.findIndex(v => v.y === +b.dataset.y);
+  if(i < 0) return;
+  $('oYears').scrollTo({ top:i * Y_H, behavior:'smooth' });
+});
+
+function playOrders(){
+  const p = $('pOrder');
+  p.classList.remove('play');
+  void p.offsetWidth;
+  p.classList.add('play');
+  /* 订单页藏看的时候容器高是 0，scrollTop 设不上去。
+     等它真显示了再定一次位。 */
+  requestAnimationFrame(snapYear);
+}
+
+/* 把年份滚轮对齐到当前选中的那一年 */
+function snapYear(){
+  const yr = $('oYears');
+  if(!yr || !YEARS.length || selYear === null) return;
+  const i = YEARS.findIndex(v => v.y === selYear);
+  if(i >= 0) yr.scrollTop = i * Y_H;
+  paintWheel();
+}
+
+/* 空状态：点水滴，它眨两下眼再睡回去 */
+const drop = $('oDrop');
+drop.addEventListener('click', () => {
+  drop.classList.remove('wake');
+  void drop.offsetWidth;
+  drop.classList.add('wake');
+  clearTimeout(drop._t);
+  drop._t = setTimeout(() => drop.classList.remove('wake'), 1500);
+});
+
+buildOrders();
+
+/* ══════════════ 登录 ══════════════ */
+/* ══ 水滴会看人 ══ */
+const face = $('plogo');
+
+function faceMood(m){
+  face.classList.remove('look-down','look-up','ok','bad');
+  if(m) face.classList.add(m);
+}
+
+$('iPhone').addEventListener('focus', () => faceMood('look-down'));
+$('iPhone').addEventListener('blur',  () => faceMood(''));
+$('iCode').addEventListener('focus',  () => faceMood('look-up'));
+$('iCode').addEventListener('blur',   () => faceMood(''));
+
+function faceBusy(){
+  return face.classList.contains('ok') || face.classList.contains('bad') ||
+         document.activeElement === $('iPhone') || document.activeElement === $('iCode');
+}
+
+/* 眨眼。间隔带随机 —— 固定节拍一眼就看出是机器。
+   用 setTimeout 递归，不用 setInterval：setInterval 的间隔只在创建时算一次，
+   之后永远是那个数，写着 Math.random() 也是假的。 */
+(function blinkLoop(){
+  setTimeout(() => {
+    if(!faceBusy()){
+      face.classList.add('blink');
+      setTimeout(() => face.classList.remove('blink'), 115);
+    }
+    blinkLoop();
+  }, 3100 + Math.random() * 1400);
+})();
+
+/* 闲着的时候偶尔瞟一眼旁边 */
+(function glanceLoop(){
+  setTimeout(() => {
+    if(!faceBusy()){
+      const dx = [-2.8, 2.8, 0, 1.9, -1.9][Math.floor(Math.random() * 5)];
+      face.style.setProperty('--gx', dx + 'px');
+      setTimeout(() => face.style.setProperty('--gx', '0px'), 850 + Math.random() * 900);
+    }
+    glanceLoop();
+  }, 3000 + Math.random() * 2600);
+})();
+
+/* ══ 气泡 ══
+   登录页的提示都从这里出，不再用底部弹上来的 toast ——
+   提醒就该从水滴嘴里说出来，而不是从屏幕底下冒出来。 */
+const bub = $('bub');
+let bubT = null;
+function say(text, wide){
+  bub.textContent = text;
+  bub.classList.toggle('wide', !!wide);
+  bub.classList.remove('on','off');
+  void bub.offsetWidth;
+  bub.classList.add('on');
+  clearTimeout(bubT);
+  bubT = setTimeout(() => {
+    bub.classList.remove('on');
+    bub.classList.add('off');
+  }, wide ? 2200 : Math.max(1400, text.length * 145));
+}
+function hush(){
+  clearTimeout(bubT);
+  bub.classList.remove('on');
+  bub.classList.add('off');
+}
+/* 说一句 + 配个表情 + 震一下，登录页的错误提示都是这个形状 */
+function quip(msg, mood){
+  say(msg, true);
+  faceMood(mood || 'bad');
+  buzz(30);
+  setTimeout(() => faceMood(''), 1300);
+}
+
+/* ══ 彩蛋：点水滴 ══
+   15 下。只有第 3/8/12/15 下说话 —— 中间那些下数纯靠形变和振动
+   给反馈。每次都弹话就不叫彩蛋了，那叫客服。 */
+const LINES = {
+  3:  { t:'痒。',          m:'',    v:16 },
+  8:  { t:'手不想要了？',  m:'bad', v:30 },
+  12: { t:'……我记住你了', m:'bad', v:42 },
+  15: { t:'好吧，你赢了',  m:'ok',  v:0  }
+};
+const TOTAL = 15;
+let pokes = 0, pokeT = null, coolT = null;
+
+function buzz(ms){
+  try{ Android.buzz(ms || 0); }catch(e){}
+}
+
+/* 第 12 下起渐渐变红。不是一下跳过去 —— 每次只推一点，
+   而且越往后推得越多，看起来像被点着了。
+
+   颜色在这里算，不用 CSS 的 color-mix —— WebView 里 SVG 的 fill 不吃它，
+   CSS.supports 会说支持，实际渲染成黑色。
+   直接写 inline fill，transition:fill 才会真的跑。 */
+const TIP = document.querySelector('.plogo .tip');
+const C_FROM = [0x8F, 0x4C, 0x38];   /* --primary 锈红 */
+const C_TO   = [0xF0, 0x34, 0x2F];   /* --danger  亮红 */
+function heatTo(p){
+  const heat = p < 12 ? 0 : Math.min(1, (p - 11) / 4);   /* 12→.25 13→.5 14→.75 15→1 */
+  const c = C_FROM.map((v, i) => Math.round(v + (C_TO[i] - v) * heat));
+  if(TIP) TIP.style.fill = 'rgb(' + c.join(',') + ')';
+  face.style.setProperty('--heat', heat.toFixed(3));
+}
+
+face.addEventListener('click', () => {
+  if(demoMode) return;
+  if(pokes >= TOTAL) return;
+
+  pokes++;
+  const line = LINES[pokes];
+  const last = pokes >= TOTAL;
+
+  /* 停手一会儿就消气 —— 不然点到第 12 下变红了就走开，
+     水滴会一直红着，下次回来像个 bug。 */
+  clearTimeout(coolT);
+  if(!last) coolT = setTimeout(() => {
+    if(demoMode) return;
+    pokes = 0;
+    heatTo(0);
+    faceMood('');
+    face.classList.remove('mad','poke');
+  }, 3200);
+
+  if(pokes >= 8 && !last) faceMood('bad');
+
+  face.classList.remove('poke','mad','swell');
+  void face.offsetWidth;
+  face.classList.add(pokes >= 8 ? 'mad' : 'poke');
+
+  heatTo(pokes);
+  if(line) say(line.t);
+  if(!last) buzz(line ? line.v : Math.round(10 + pokes * 1.6));
+
+  clearTimeout(pokeT);
+
+  if(last){
+    /* 第 15 下：鼓起来 → 从中间炸开 → 铺满 → 直接进演示模式 */
+    faceMood('ok');
+    pokeT = setTimeout(() => {
+      face.classList.remove('mad','poke');
+      face.classList.add('swell');
+      buzz(60);
+      setTimeout(() => {
+        $('burst').classList.add('on');
+        $('flash').classList.add('on');
+        setTimeout(() => buzz(90), 120);
+        setTimeout(() => {
+          enterDemo();
+          setTimeout(() => {
+            $('burst').classList.remove('on');
+            $('flash').classList.remove('on');
+            face.classList.remove('swell');
+            face.style.setProperty('--heat', '0');
+            if(TIP) TIP.style.fill = '';
+            hush();
+            pokes = 0;
+          }, 380);
+        }, 560);
+      }, 300);
+    }, 620);
+  } else {
+    pokeT = setTimeout(() => {
+      if(pokes < 8) faceMood('');
+      face.classList.remove('mad','poke');
+    }, 900);
+  }
+});
+/* 桥调用统一走这里：原生那边万一抛异常，JS 会拿到 undefined，
+   JSON.parse 就会炸，后面的"把按钮恢复回来"就永远执行不到 —— 界面直接卡死。
+   所以每一步桥调用都必须包住，出错也要当成一次正常的失败返回。 */
+function fromNative(fn, what){
+  try {
+    const raw = fn();
+    if(typeof raw !== 'string' || !raw) throw new Error('原生没有返回内容');
+    return JSON.parse(raw);
+  } catch(e){
+    return { ok:false, msg:(what || '操作') + '出错：' + ((e && e.message) || e) };
+  }
+}
+
+/* 任何漏网的报错都弹出来，不许静默失败 */
+window.onerror = (m) => { toast('出错了：' + m); return false; };
+function enterDev(){
+  const cards = document.querySelectorAll('.dcard');
+  cards.forEach(c => c.classList.remove('in'));
+  void $('dlist').offsetWidth;                        /* 强制回流，否则重加 in 不播 */
+  cards.forEach((c, i) => setTimeout(() => c.classList.add('in'), 110 + i * 90));
+}
+
+function showDevList(){
+  setAcct();
+  loadDevices();
+  loadOrders();
+  $('pLogin').classList.add('gone');
+  setTimeout(() => { $('pLogin').style.display = 'none'; }, 320);
+  setStep('dev');
+  /* enterDev() 不摆在这儿 —— 卡片是 loadDevices 回调里才生成的（还要现问机器状态），
+     在这里播入场，播的是个空气。 */
+}
+
+function loadDevices(){
+  /* 演示模式下绝不去问真实设备 —— 一问就会把 DEMO_DEV 顶掉。
+     demoMode 以前只管解锁和账号显示，数据这块没人管，是个真漏洞：
+     任何一条路径叫起 Android.devices()，演示数据就没了。 */
+  if(demoMode) return;
+  Android.devices();      /* 结果从 window.onDevices 回来（还要顺便问机器状态，会慢一点） */
+}
+
+window.onDevices = raw => {
+  /* 双保险：万一有别的路径把真数据叫回来了，也不许覆盖演示数据。 */
+  if(demoMode) return;
+  DEV = (JSON.parse(raw) || []).map(d => ({ ...d, off: !d.online }));
+  renderDevices();
+  /* 卡片 CSS 默认 opacity:0，得靠 .in 才浮上来。DOM 是这里重建的，
+     所以入场也得由这里发 —— 否则新卡片永远停在透明状态：
+     DOM 里明明有，屏幕上一片空白。 */
+  enterDev();
+};
+
+function loadOrders(force){
+  /* 演示模式下不去问真实订单 —— 和 loadDevices 同一个道理。 */
+  if(demoMode) return;
+  /* 手上还没数据就先转圈 —— 空白页什么也不说，人会以为坏了。
+     有缓存的话原生会立刻把缓存丢过来，转圈一闪就过。 */
+  if(!ORDERS.length) $('pOrder').classList.add('loading');
+  Android.orders(!!force);   /* 结果从 window.onOrders 回来 */
+}
+
+window.onOrders = raw => {
+  if(demoMode) return;       /* 双保险 */
+  $('pOrder').classList.remove('loading');
+  /* 原生那边已经校验过缓存是合法 JSON 数组了，这里再兜一层：
+     万一哪天接口返回的形状变了，也不该把整个订单页炸成空白。 */
+  let list = [];
+  try { const v = JSON.parse(raw); if(Array.isArray(v)) list = v; }
+  catch(e){ list = []; }
+  setOrders(list);
+  $('pOrder').classList.toggle('empty', ORDERS.length === 0);
+  buildOrders();
+  buildSummary();
+};
+
+let codeT = null;
+
+function startCountdown(){
+  const b = $('bSend');
+  b.disabled = true;
+  let n = 60;
+  b.textContent = n + 's 后重发';
+  $('iCode').focus();
+  codeT = setInterval(() => {
+    n--;
+    if(n <= 0){ clearInterval(codeT); codeT = null; b.disabled = false; b.textContent = '重新发送'; }
+    else b.textContent = n + 's 后重发';
+  }, 1000);
+  codeT = setInterval(() => {
+    n--;
+    if(n <= 0){ clearInterval(codeT); codeT = null; b.disabled = false; b.textContent = '重新发送'; }
+    else b.textContent = n + 's 后重发';
+  }, 1000);
+}
+
+/* 这条是真发短信，别乱按 */
+$('bSend').addEventListener('click', () => {
+  const b = $('bSend');
+  if(b.disabled) return;
+  const phone = $('iPhone').value.trim();
+  if(!/^1(3\d|4[5-9]|5[0-35-9]|6[2567]|7[0-8]|8\d|9\d)\d{8}$/.test(phone)){ quip('这不像个手机号'); return; }
+  b.disabled = true; b.textContent = '发送中…';
+  /* 发完了原生会喊 window.onSendCode，这里不等它 */
+  Android.sendCode(phone);
+});
+
+window.onSendCode = raw => {
+  const r = fromNative(() => raw, '发送验证码');
+  if(r.ok){
+    startCountdown(); $('iCode').focus();
+    say('验证码已发到 ' + $('iPhone').value.trim());
+  } else {
+    const b = $('bSend');
+    b.disabled = false; b.textContent = '发送验证码';
+    quip(r.msg || '发不出去');
+  }
+};
+
+$('bLogin').addEventListener('click', () => {
+  const b = $('bLogin');
+  if(b.dataset.busy) return;
+  const phone = $('iPhone').value.trim(), code = $('iCode').value.trim();
+  if(!/^1(3\d|4[5-9]|5[0-35-9]|6[2567]|7[0-8]|8\d|9\d)\d{8}$/.test(phone)){ quip('这不像个手机号'); return; }
+  if(code.length < 4){ quip('验证码填完整'); return; }
+
+  b.dataset.busy = '1';
+  b.disabled = true;
+  $('plogo').classList.add('pop');
+  setLabel(b, '登录中…');
+
+  /* 登录结果从 window.onLogin 回来，这里不等它 */
+  Android.login(phone, code);
+});
+
+window.onLogin = raw => {
+  const b = $('bLogin');
+  const r = fromNative(() => raw, '登录');
+
+  /* 无论如何都要把按钮放回原样 —— 错了也一样，不然它就一直灰在那里 */
+  b.dataset.busy = '';
+  b.disabled = false;
+  setLabel(b, '登 录');
+  $('plogo').classList.remove('pop');
+
+  if(r.ok){
+    faceMood('ok');                      /* 眯眼笑一下再进列表 */
+    const who = (Android.phone && Android.phone()) || $('iPhone').value.trim();
+    say('已登录 · ' + who);              /* 登错号要当场看得出来 */
+    setTimeout(showDevList, 420);
+  } else {
+    quip(r.msg || '登录失败');           /* 做个鬼脸 + 气泡说话 */
+  }
+};
+
+/* ══════════════ 扫码加设备 ══════════════ */
+
+function openScan(){
+  setStep('scan');
+  $('pScan').classList.remove('done');
+  $('manual').classList.remove('on');
+  $('pScan').classList.add('entering');
+  /* 和点卡片完全同一条动画，只是源头换成右上角的「+」。
+     它是个 34px 的圆，所以圆角给一半 —— 缩回去的时候才还是圆的。 */
+  expandFrom($('bAdd'), () => {
+    $('pScan').classList.add('on');
+    /* 先加 .on 让页面可见，两帧之后再撤 entering，淡入才会真的播 */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pScan').classList.remove('entering');
+    }));
+    startCam();          /* 页面长出来了才开相机，不然第一帧全是黑的 */
+  }, null, 'var(--bg)', 17);
+}
+
+function closeScan(){
+  stopCam();
+  $('manual').classList.remove('on');
+  collapseTo(() => $('pScan').classList.remove('on'));
+}
+
+/* 「+」→ 先要相机权限，拿到权限的结果从 window.onCamReady 回来 */
+$('bAdd').addEventListener('click', () => Android.askCamera());
+
+function setAcct(){
+  if(demoMode){                       /* 演示模式别显示真号 */
+    $('acct').textContent = '演示模式';
+    $('acctNo').textContent = '演示模式 · 不是真数据';
+    return;
+  }
+  const p = (Android.phone && Android.phone()) || '';
+  $('acct').textContent = p || '未登录';
+  $('acctNo').textContent = p || '没登录';
+}
+
+$('bAcct').addEventListener('click', () => {
+  setAcct();
+  $('acctBox').classList.add('on');
+  $('bAcct').setAttribute('aria-expanded', 'true');
+});
+$('bAcctNo').addEventListener('click', () => {
+  $('acctBox').classList.remove('on');
+  $('bAcct').setAttribute('aria-expanded', 'false');
+});
+$('bLogout').addEventListener('click', () => {
+  Android.logout();
+  location.reload();
+});
+
+/* ══ 演示模式：假数据跑界面，一个接口都不碰 ══ */
+let demoMode = false;
+
+const DEMO_DEV = [
+  { goodsId:'demo1', name:'1号楼西热水', price:'0.011', skuId:'demo1', online:true,  workStatus:1 },
+  { goodsId:'demo2', name:'2号楼东热水', price:'0.011', skuId:'demo2', online:true,  workStatus:3 },
+  { goodsId:'demo3', name:'楼下那台',     price:'',      skuId:'demo3', online:false, workStatus:0 }
+];
+const DEMO_ORDER = [
+  { orderNo:'d1', dev:'1号楼西热水', amt:0.25, time:'07:12', dateKey:'2026-03-18', date:'3月18日' },
+  { orderNo:'d2', dev:'2号楼东热水', amt:0.99, time:'07:10', dateKey:'2026-03-18', date:'3月18日' },
+  { orderNo:'d3', dev:'1号楼西热水', amt:2.30, time:'12:31', dateKey:'2026-03-17', date:'3月17日' },
+  { orderNo:'d4', dev:'1号楼西热水', amt:0.76, time:'20:02', dateKey:'2026-03-17', date:'3月17日' },
+  { orderNo:'d5', dev:'1号楼西热水', amt:1.85, time:'21:04', dateKey:'2026-03-15', date:'3月15日' }
+];
+
+function enterDemo(){
+  demoMode = true;
+  DEV = DEMO_DEV.map(d => ({ ...d, off: !d.online }));
+  renderDevices();
+  setOrders(DEMO_ORDER);
+  $('pOrder').classList.toggle('empty', ORDERS.length === 0);
+  buildOrders();
+  buildSummary();
+  $('acct').textContent = '演示模式';
+  $('acctNo').textContent = '演示模式 · 不是真数据';
+  $('pLogin').classList.add('gone');
+  setTimeout(() => { $('pLogin').style.display = 'none'; }, 320);
+  setStep('dev');
+  enterDev();
+}
+
+/* ══ 设备卡片：长按拖动排序 / 左滑删除 / 粉碎 ══ */
+const HOLD_MS = 420;      /* 多久算长按 */
+const SLOP_PX = 9;        /* 位移超过它就不算“按”而是“滑”了 */
+const DEL_W   = 88;       /* 删除按钮宽度，要跟 CSS 里那个 88px 一致 */
+const OPEN_PX = 80;       /* 左滑超过它就贴住不弹回 */
+const FLY_WAIT = 260;     /* 粒子飞多久后整条塌陷，下面的卡片跟着收上去 */
+
+let G = null;             /* 当前手势 */
+let pendingRemove = -1;   /* 等确认的那一台 */
+
+/* 一次把「红色露多少 / 皮筋拉多长」都算好。v 是卡片的 translateX（负 = 左滑） */
+function setSlide(wrap, v){
+  const sx = Math.max(0, -v);                     /* 左滑距离，正值 */
+  wrap.style.setProperty('--sx', sx + 'px');
+  wrap.style.setProperty('--rv', Math.max(0, Math.min(1, sx / DEL_W)));
+  /* 卡片皮筋：只认左滑，右滑（回弹过冲）时 sx 恒为 0，拉伸自然回到 1 */
+  const k = Math.min(sx / DEL_W, 1.15);
+  wrap.style.setProperty('--sx-x', (1 + k * 0.105).toFixed(3));
+  wrap.style.setProperty('--sx-y', (1 - k * 0.042).toFixed(3));
+  /* 「删除」两个字的皮筋：滑过 DEL_W（红色刚好铺满）之后，继续滑多少就拉多长 */
+  const over = Math.max(0, sx - DEL_W);
+  const t = Math.min(over / 50, 1);
+  wrap.style.setProperty('--del-x', (1 + t * 0.6).toFixed(3));
+  wrap.style.setProperty('--del-y', (1 - t * 0.18).toFixed(3));
+}
+
+/* 收回时把裁切留住，等回弹动画走完再摘 —— 不然卡片带惯性往右冲的那一下
+   会冲出容器边界，露出一个方角。 */
+function holdClip(wrap, ms){
+  wrap.classList.add('closing');
+  clearTimeout(wrap._clipT);
+  wrap._clipT = setTimeout(() => wrap.classList.remove('closing'), ms);
+}
+
+function closeSwipe(wrap){
+  const card = wrap.querySelector('.dcard');
+  if(card) card.style.transform = '';
+  setSlide(wrap, 0);
+  holdClip(wrap, 360);
+  wrap.classList.remove('swiped', 'swiping');
+}
+
+/* ★ 点屏幕上任何地方都收回。捕获阶段拦下来，并且 preventDefault + stopPropagation ——
+   iOS 原生的行为就是「点外面的那一下只用来关闭，绝不穿透到下面」，
+   否则用户想关掉滑动结果却误触了别的卡片。 */
+document.addEventListener('pointerdown', e => {
+  const open = document.querySelector('.dwrap.swiped');
+  if(!open) return;
+  if(e.target.closest('.ddel')) return;            /* 点删除键：交给它自己 */
+  if(e.target.closest('.manual')) return;          /* 弹窗开着时别动卡片 */
+  /* 点这张卡片本身也在这里就收回 —— 别丢给 click，
+     click 要等 pointerup 之后才发，会比点别处慢一拍。 */
+  if(e.target.closest('.dwrap.swiped')){ closeSwipe(open); return; }
+  e.preventDefault();
+  e.stopPropagation();
+  closeSwipe(open);
+}, true);
+
+function bindCardGestures(wrap){
+  const card = wrap.querySelector('.dcard');
+
+  wrap.addEventListener('touchstart', e => {
+    if(e.touches.length !== 1) return;
+    if(wrap.classList.contains('swiped')) return;   /* 已滑开的，先让它自己收回去 */
+    const t = e.touches[0];
+    G = { wrap:wrap, card:card, i:+wrap.dataset.d, x0:t.clientX, y0:t.clientY,
+          mode:'idle', dx:0, dy:0, shift:0, h:0, cards:null };
+    G.holdT = setTimeout(() => {
+      if(!G || G.mode !== 'idle') return;
+      G.mode = 'drag';
+      Android.buzz(22);                              /* 震一下：拿起来了 */
+      startDrag(G);
+    }, HOLD_MS);
+  }, { passive:true });
+
+  wrap.addEventListener('touchmove', e => {
+    if(!G) return;
+    const t  = e.touches[0];
+    const dx = t.clientX - G.x0, dy = t.clientY - G.y0;
+
+    if(G.mode === 'idle'){
+      if(Math.abs(dx) > SLOP_PX && Math.abs(dx) > Math.abs(dy)){
+        clearTimeout(G.holdT);
+        G.mode = 'swipe';
+        G.card.classList.add('gesturing');
+      } else if(Math.abs(dy) > SLOP_PX){
+        clearTimeout(G.holdT);
+        G.mode = 'scroll';                           /* 让页面自己滚 */
+      }
+    }
+
+    if(G.mode === 'swipe'){
+      let v = dx;
+      if(v > 0) v *= 0.16;                                   /* 往右：阻力，别硬拖 */
+      if(v < -DEL_W - 30) v = -DEL_W - 30 + (v + DEL_W + 30) * 0.22;
+      G.dx = v;
+      G.card.style.transform = 'translateX(' + v.toFixed(1) + 'px)';
+      setSlide(G.wrap, v);
+      e.preventDefault();
+    }
+
+    if(G.mode === 'drag') dragMove(G, t.clientY);
+  }, { passive:false });
+
+  wrap.addEventListener('touchend', e => {
+    if(!G) return;
+    clearTimeout(G.holdT);
+    const g = G; G = null;
+
+    if(g.mode === 'swipe'){
+      g.card.classList.remove('gesturing');
+      const open = g.dx < -OPEN_PX;
+      g.card.style.transform = open ? 'translateX(-' + DEL_W + 'px)' : '';
+      setSlide(g.wrap, open ? -DEL_W : 0);
+      g.wrap.classList.toggle('swiped', open);
+      g.wrap.classList.remove('swiping');
+      holdClip(g.wrap, 360);                           /* 回弹那一下也要裁住 */
+      if(g.dx !== 0) e.preventDefault();               /* 滑过就不算点击 */
+    } else if(g.mode === 'drag'){
+      endDrag(g);
+      e.preventDefault();
+    }
+    /* 还是 idle 的，交给 click 去 openWater */
+  }, { passive:false });
+
+  wrap.addEventListener('touchcancel', () => {
+    if(!G) return;
+    clearTimeout(G.holdT);
+    const g = G; G = null;
+    if(g.mode === 'drag'){
+      /* 触摸被系统打断（来电、切后台）—— 位移必须清干净，否则卡片卡在半路 */
+      g.card.classList.remove('gesturing','lifted');
+      g.wrap.classList.remove('dragging','shiver');
+      ;[].slice.call(document.querySelectorAll('.dcard')).forEach(c => { c.style.transform = ''; });
+      renderDevices();
+    }
+    if(g.mode === 'swipe'){
+      g.card.classList.remove('gesturing');
+      closeSwipe(g.wrap);
+    }
+  }, { passive:true });
+
+  card.addEventListener('click', () => {
+    if(wrap.classList.contains('swiped')){ closeSwipe(wrap); return; }
+    openWater(+wrap.dataset.d);
+  });
+
+  wrap.querySelector('.ddel').addEventListener('click', e => {
+    e.stopPropagation();
+    const i = +wrap.dataset.d;
+    if(!DEV[i]) return;
+    pendingRemove = i;
+    $('rmName').textContent = DEV[i].name || '这台设备';
+    $('rmBox').classList.add('on');
+  });
+}
+
+function startDrag(g){
+  const r = g.card.getBoundingClientRect();
+  g.h = r.height + 10;                    /* 卡片高 + 间距，和 .dwrap 的 margin 一致 */
+  g.cards = [].slice.call(document.querySelectorAll('.dcard'));
+  g.card.classList.add('gesturing', 'lifted');
+  g.wrap.classList.add('dragging', 'shiver');      /* ★ 抖的是整条卡片 */
+  g.card.style.transform = 'scale(1.028)';          /* 拿起来：稍微浮一点 */
+}
+
+function dragMove(g, cy){
+  const dy = cy - g.y0;
+  g.card.style.transform =
+    'translateY(' + dy.toFixed(1) + 'px) scale(1.028)';
+
+  /* 往下挪一格就换一位。夹住范围，别飞出列表 */
+  let shift = Math.round(dy / g.h);
+  shift = Math.max(-g.i, Math.min(g.cards.length - 1 - g.i, shift));
+  g.shift = shift;
+
+  /* 被挤的卡片往反方向挪一格 —— 就一格，不用管它们各自的原始位置 */
+  g.cards.forEach((c, j) => {
+    if(c === g.card) return;
+    let t = 0;
+    if(shift > 0 && j > g.i && j <= g.i + shift) t = -g.h;
+    if(shift < 0 && j < g.i && j >= g.i + shift) t =  g.h;
+    c.style.transform = t ? 'translateY(' + t + 'px)' : '';
+  });
+}
+
+function endDrag(g){
+  g.card.classList.remove('gesturing', 'lifted');
+  g.wrap.classList.remove('dragging', 'shiver');
+  const moved = g.shift !== 0;
+
+  if(moved){
+    const item = DEV.splice(g.i, 1)[0];
+    DEV.splice(g.i + g.shift, 0, item);
+    /* 演示模式只动内存 —— 别把假设备的顺序写进真实存储 */
+    if(!demoMode) Android.reorderDevices(JSON.stringify(DEV.map(d => d.goodsId)));
+  }
+
+  /* 收尾前先把手写过的 transform 全清掉 —— 不清的话下面那些卡片会从
+     错误的位置滑回去，看着像挫了一下。 */
+  ;[].slice.call(document.querySelectorAll('.dcard')).forEach(c => { c.style.transform = ''; });
+
+  if(moved){ renderDevices(); }
+  else { g.card.style.transform = ''; }   /* 没挪动：让它弹回原处，不重渲染（重渲染会闪） */
+}
+
+/* 粉末：整条（卡片 + 红色删除键）一起化成粒子，不会剩下一块红在后面。
+   每个粒子按它「原来的位置」取色 —— 这是网上那套像素采样的简化版：
+   主流做法是把元素画进 canvas、读每个像素的颜色、按密度抽样成粒子
+   （Disintegrate.js / snap-vanish / Thanos 那套）；这里不引 canvas，
+   改成「网格采样 + 按位置判色」。 */
+function crushWrap(wrap, done){
+  const card = wrap.querySelector('.dcard');
+  const W = wrap.offsetWidth, H = wrap.offsetHeight;
+  const cr = card.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  const cardR = cr.left - wr.left + cr.width;   /* 卡片右边缘；它右边就是露出的删除键 */
+
+  card.style.opacity = '0';
+  wrap.style.setProperty('--rv', 0);            /* 红块也淡掉，由红色粒子接手 */
+  wrap.style.clipPath = 'none';                 /* 粒子要飞出容器，别裁 */
+  wrap.style.zIndex = 20;                       /* 也别被后面那张卡片盖住 */
+
+  const COLS = 20, ROWS = 8;                    /* 160 个 —— 少了是「点阵」，多了才像粉末 */
+  for(let r = 0; r < ROWS; r++){
+    for(let c = 0; c < COLS; c++){
+      /* 位置加一点抖动，不然整齐的网格看着像「点阵」不像「粉末」 */
+      const x = (c + 0.5 + (Math.random() - 0.5) * 0.9) / COLS * W;
+      const y = (r + 0.5 + (Math.random() - 0.5) * 0.9) / ROWS * H;
+
+      let bg;
+      if(x > cardR) bg = '#E24B3F';                          /* 删除键：红 */
+      else if(y > H * 0.2 && y < H * 0.8) bg = '#C6B4AE';    /* 文字带：深一点 */
+      else bg = '#F2E8E3';                                   /* 卡片底 */
+
+      const p = document.createElement('i');
+      p.className = 'dust';
+      p.style.left = x.toFixed(1) + 'px';
+      p.style.top  = y.toFixed(1) + 'px';
+      p.style.background = bg;
+
+      const cx = x / W - 0.5, cy = y / H - 0.5;
+      const out = Math.hypot(cx, cy) / 0.7;                  /* 0 = 中心，1 = 角 */
+      p.style.setProperty('--dx', (cx * 152 + (Math.random() * 42 - 21)).toFixed(0) + 'px');
+      p.style.setProperty('--dy', (cy * 74 + 44 + Math.random() * 54).toFixed(0) + 'px');
+      p.style.setProperty('--rz', ((Math.random() - 0.5) * 44).toFixed(0) + 'deg');
+      /* 中心的先散，往外扩；递增排延迟会像音阶一样机械 */
+      p.style.animationDelay = (Math.random() * 56 + out * 76).toFixed(0) + 'ms';
+
+      wrap.appendChild(p);
+    }
+  }
+
+  /* 整条塌陷，下面的卡片跟着收上去。
+     这里不把 wrap 的 opacity 打成 0 —— 那会把还在飞的粒子一起抹掉。 */
+  setTimeout(() => {
+    wrap.style.height = wrap.offsetHeight + 'px';
+    void wrap.offsetWidth;                       /* 强制回流，否则 height 起点不生效 */
+    wrap.style.height = '0px';
+  }, FLY_WAIT);
+
+  setTimeout(() => { if(done) done(); }, 1000);
+}
+
+$('bRmOk').addEventListener('click', () => {
+  $('rmBox').classList.remove('on');
+  const i = pendingRemove; pendingRemove = -1;
+  if(i < 0 || !DEV[i]) return;
+  const wrap = document.querySelector('.dwrap[data-d="' + i + '"]');
+  const goodsId = DEV[i].goodsId;
+  DEV.splice(i, 1);
+  /* 演示模式：只动内存，不碰 DeviceStore 也不发请求 */
+  if(!demoMode) Android.removeDevice(goodsId);
+  if(wrap) crushWrap(wrap, () => renderDevices());
+  else renderDevices();
+});
+
+$('bRmNo').addEventListener('click', () => {
+  $('rmBox').classList.remove('on');
+  pendingRemove = -1;
+});
+
+window.onCamReady = ok => {
+  if(ok) openScan();
+  else toast('没给相机权限，扫不了码');
+};
+
+let pendingDev = null;
+
+/* ══ 取景框里的相机 ══ */
+const cam = $('cam');
+let camStream = null, camTimer = 0, camBusy = false;
+
+const fc = document.createElement('canvas');
+const fx = fc.getContext('2d', { willReadFrequently:true });
+
+function scanHint(t){
+  const el = document.querySelector('#pScan .shint');
+  if(el) el.textContent = t;
+}
+
+function stopCam(){
+  clearInterval(camTimer); camTimer = 0;
+  camBusy = false;
+  if(camStream){ camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  if(cam) cam.srcObject = null;
+}
+
+function startCam(){
+  stopCam();
+  scanHint('把机器上的二维码放进取景框');
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    scanHint('这台手机的网页调不起相机，用手动输入吧'); return;
+  }
+  navigator.mediaDevices.getUserMedia({
+    audio:false,
+    video:{ facingMode:{ ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } }
+  }).then(st => {
+    camStream = st;
+    cam.srcObject = st;
+    cam.play().catch(() => {});
+    /* 每 260ms 抓一帧。抓帧和解码都在别的线程，画面不会卡。 */
+    camTimer = setInterval(grabFrame, 260);
+  }).catch(e => {
+    scanHint('相机打不开（' + ((e && e.name) || '未知') + '），用手动输入吧');
+  });
+}
+
+/* 抓一帧 → 拉对比度 → 丢给原生那边的 ML Kit 解 */
+function grabFrame(){
+  if(camBusy || !cam.videoWidth) return;
+  if($('pScan').classList.contains('done')) return;
+  camBusy = true;
+  try {
+    const outW = 900, outH = Math.round(cam.videoHeight / cam.videoWidth * outW);
+    fc.width = outW; fc.height = outH;
+    fx.drawImage(cam, 0, 0, outW, outH);
+
+    /* 机器上的码是蓝色背光屏：深蓝配浅蓝，对比度极低，手机自带扫码器就是这么挂的。
+       把亮度的 6% 压到 0、94% 拉到 255，解码器立刻好认。 */
+    const im = fx.getImageData(0, 0, outW, outH), d = im.data;
+    const hist = new Uint32Array(256);
+    for(let i = 0; i < d.length; i += 4){
+      const g = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 | 0;
+      d[i] = d[i + 1] = d[i + 2] = g;
+      hist[g]++;
+    }
+    const total = d.length / 4;
+    let acc = 0, lo = 0, hi = 255;
+    for(let v = 0; v < 256; v++){ acc += hist[v]; if(acc >= total * 0.06){ lo = v; break; } }
+    acc = 0;
+    for(let v = 0; v < 256; v++){ acc += hist[v]; if(acc >= total * 0.94){ hi = v; break; } }
+    const span = Math.max(hi - lo, 24), lut = new Uint8Array(256);
+    for(let v = 0; v < 256; v++) lut[v] = Math.min(255, Math.max(0, ((v - lo) / span * 255) | 0));
+    for(let i = 0; i < d.length; i += 4) d[i] = d[i+1] = d[i+2] = lut[d[i]];
+    fx.putImageData(im, 0, 0);
+
+    const hit = Android.scanFrame(fc.toDataURL('image/jpeg', 0.82));
+    if(hit) gotCode(hit);
+  } catch(e) { /* 这一帧不行就等下一帧 */ }
+  camBusy = false;
+}
+
+function gotCode(raw){
+  stopCam();
+  $('pScan').classList.add('done');
+  scanHint('扫到了，正在查这台机器…');
+  Android.addDeviceFromCode(raw);      /* 结果从 window.onAddDevice 回来 */
+}
+
+window.onAddDevice = raw => {
+  const r = fromNative(() => raw, '识别');
+  if(!r.ok){
+    $('pScan').classList.remove('done');
+    scanHint((r.msg || '这台机器加不了') + ' —— 3 秒后重试');
+    setTimeout(() => { if($('pScan').classList.contains('on')) startCam(); }, 3000);
+    return;
+  }
+  pendingDev = r.device;
+  $('sfName').textContent = pendingDev.name || '这台机器';
+  $('sfSub').textContent  = deviceSub({ ...pendingDev, off: !pendingDev.online });
+  scanHint('扫到了这台机器');
+};
+
+/* ══ 扫不出来时的手动兜底 ══ */
+$('bManual').addEventListener('click', () => {
+  stopCam();
+  $('manual').classList.add('on');
+  $('iSn').focus();
+});
+
+$('bSnNo').addEventListener('click', () => {
+  $('manual').classList.remove('on');
+  if(!$('pScan').classList.contains('done')) startCam();
+});
+
+$('bSnOk').addEventListener('click', () => {
+  const no = $('iSn').value.trim();
+  if(no.length < 6){ toast('设备号不止这么短'); return; }
+  Android.addDeviceByNo(no);           /* 结果从 window.onAddDeviceNo 回来 */
+});
+
+window.onAddDeviceNo = raw => {
+  const r = fromNative(() => raw, '查询');
+  if(!r.ok){ toast(r.msg || '这个号查不到机器'); return; }
+  $('manual').classList.remove('on');
+  pendingDev = r.device;
+  $('sfName').textContent = pendingDev.name || '这台机器';
+  $('sfSub').textContent  = deviceSub({ ...pendingDev, off: !pendingDev.online });
+  $('pScan').classList.add('done');
+  scanHint('查到了这台机器');
+};
+$('bScanBack').addEventListener('click', closeScan);
+
+$('bAddDev').addEventListener('click', () => {
+  const name = (pendingDev && pendingDev.name) || '';
+  loadDevices();
+  closeScan();
+  setTimeout(() => {
+    /* 新设备永远插在最前面，所以就是第 0 张卡 */
+    const c = document.querySelector('.dcard[data-d="0"]');
+    if(c){ c.classList.remove('in'); void c.offsetWidth; c.classList.add('in'); }
+    toast('已添加 · ' + name);
+    pendingDev = null;
+  }, 340);
+  setStep('dev');
+});
+
+/* ══════════════ 消费汇总 ══════════════ */
+/* 金额、次数、排行全部从同一份订单明细算出来，不另写一套假数字 */
+function buildSummary(){
+  const flat = [];
+  ORDERS.forEach(g => g.items.forEach(it => flat.push(it)));
+  const sum = Math.round(flat.reduce((a, b) => a + b.amt, 0) * 100) / 100;
+
+  const num = $('sNum'); num.innerHTML = '';
+  [...sum.toFixed(2)].forEach((ch, i) => {
+    const el = document.createElement('i');
+    el.style.setProperty('--dl', (i * 50) + 'ms');
+    const u = document.createElement('u'); u.textContent = ch; el.appendChild(u);
+    num.appendChild(el);
+  });
+
+  $('sCnt').textContent = flat.length + ' 次';
+  /* 一条订单都没有时 sum/flat.length 是 NaN，得挡住 */
+  $('sAvg').textContent = '\u00a5' + (flat.length ? (sum / flat.length).toFixed(2) : '0.00');
+
+  const byDev = {};
+  flat.forEach(it => { byDev[it.dev] = Math.round(((byDev[it.dev] || 0) + it.amt) * 100) / 100; });
+  const rank = Object.keys(byDev).map(k => ({ n: k, v: byDev[k] }))
+                     .sort((a, b) => b.v - a.v);
+  /* 没有订单时 rank 是空的 —— 这一行原来直接崩，而且是在"登录成功 → 进列表"
+     的路上崩的，用户看到的是"验证码对的也登不进去" */
+  $('sTop').textContent = rank.length ? rank[0].n : '还没有';
+
+  $('sRank').innerHTML = rank.map((r, i) =>
+    '<div class="rrow" style="--dl:' + (180 + i * 90) + 'ms">' +
+      '<div class="r1"><span class="rn">' + r.n + '</span>' +
+      '<span class="rv">' + money(r.v) + '</span></div>' +
+      '<div class="rbar"><i style="--w:' + (r.v / sum).toFixed(3) + '"></i></div>' +
+      '<div class="r2">' + Math.round(r.v / sum * 100) + '% · ' +
+        flat.filter(f => f.dev === r.n).length + ' 次</div>' +
+    '</div>').join('');
+
+  /* 近 6 个月：只有一个月的真实明细，其余标成"示例数据" */
+  const MV = [.32,.48,.62,.41,.55,1], ML = ['10月','11月','12月','1月','2月','3月'];
+  const MD = [0,80,30,150,210,120];
+  $('mBars').innerHTML = MV.map((v, i) =>
+    '<i style="--h:' + v + ';--dl:' + MD[i] + 'ms" class="' + (v === 1 ? 'hi' : '') + '"></i>').join('');
+  $('mLabs').innerHTML = ML.map(m => '<span>' + m + '</span>').join('');
+}
+
+function openSum(){
+  setStep('sum');
+  $('pSummary').classList.add('entering');
+  const src = document.querySelector('.osum');
+  lastCard = src;
+  expandFrom(src, () => {
+    $('pOrder').classList.add('cov');
+    $('pSummary').classList.add('on');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pSummary').classList.remove('entering');
+      $('pSummary').classList.remove('play'); void $('pSummary').offsetWidth;
+      $('pSummary').classList.add('play');
+    }));
+  }, 'pSummary', 'var(--bg)', 0);
+}
+
+/* 整个 .osum 原来都是「进汇总」的点击区。加了年份滚轮之后就不行了 ——
+   滚轮也在这个容器里，点年份会连带跳去汇总。所以把滚轮排除掉。 */
+document.querySelector('.osum').addEventListener('click', e => {
+  if(e.target.closest('.oyears')) return;
+  openSum();
+});
+$('bkS').addEventListener('click', () => {
+  collapseTo(() => {
+    $('pSummary').classList.remove('on');
+    $('pOrder').classList.remove('cov');
+  });
+});
+
+/* ══════════════ 流程指示板 ══════════════ */
+const STEPS = [
+  { id:'login',  t:'登录',          d:'手机号 + 验证码，60 秒倒计时' },
+  { id:'dev',    t:'设备列表',       d:'两张卡片错落进场；右上角 + 加设备' },
+  { id:'scan',   t:'扫码加设备',     d:'从右上角那个 + 长成整页，扫描线来回走' },
+  { id:'water',  t:'接水 · 解锁',    d:'会醒来的锁 → 变水滴；结束接水' },
+  { id:'order',  t:'订单',          d:'竖线自己画下来，日期一个个亮' },
+  { id:'sum',    t:'消费汇总',       d:'金额块长成汇总页，数字全从明细算' },
+];
+
+$('steps').innerHTML = STEPS.map((s, i) =>
+  '<li data-s="' + s.id + '"><span class="n">' + (i + 1) + '</span>' +
+  '<span class="t"><b>' + s.t + '</b><span>' + s.d + '</span></span></li>').join('');
+
+function setStep(id){
+  document.querySelectorAll('#steps li').forEach(li => {
+    const on = li.dataset.s === id;
+    li.classList.toggle('on', on);
+    if(on) li.dataset.visited = '1';       /* 留个痕，自动演示跑完能查漏 */
+  });
+}
+
+/* ══════════════ 自动演一遍 ══════════════ */
+let autoRun = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function stopAuto(){
+  if(!autoRun) return;
+  autoRun.cancelled = true;
+  autoRun = null;
+  const b = $('bAuto');
+  b.classList.remove('busy');
+  b.textContent = '自动演一遍';
+}
+
+async function autoPlay(){
+  if(autoRun){ stopAuto(); return; }
+  const run = { cancelled:false };
+  autoRun = run;
+  const b = $('bAuto');
+  b.classList.add('busy'); b.textContent = '停止';
+
+  const wait = async ms => {
+    await sleep(ms);
+    if(run.cancelled) throw new Error('cancelled');
+  };
+
+  try {
+    setStep('login');
+    await wait(500);   $('bSend').click();             /* 发送验证码 */
+    await wait(1200);  $('bLogin').click();            /* 登录 */
+    await wait(1700);  $('bAdd').click();              /* 打开扫码 */
+    await wait(2400);  $('bAddDev').click();           /* 扫到 → 添加 */
+    await wait(1500);
+    document.querySelector('.dcard[data-d="2"]').click();   /* 点新设备 */
+    await wait(1800);  $('bUnlock').click();           /* 解锁 */
+    await wait(3000);  $('bEnd').click();              /* 结束接水 */
+    await wait(1500);  $('bk').click();                /* 返回设备页 */
+    await wait(1100);
+    document.querySelector('#pDev .tb[data-t="1"]').click();  /* 切到订单 */
+    await wait(2400);
+    document.querySelector('.osum').click();           /* 点金额 → 汇总 */
+    await wait(1900);  $('bkS').click();               /* 返回 */
+    await wait(900);
+  } catch(e) { /* 用户打断了 */ }
+  stopAuto();
+}
+
+$('bAuto').addEventListener('click', autoPlay);
+$('bReset').addEventListener('click', () => { location.hash = '#'; location.reload(); });
+
+/* 用户一碰手机就停掉自动演示（自动点击不会触发 pointerdown，所以不会自己停自己） */
+document.addEventListener('pointerdown', () => { if(autoRun) stopAuto(); }, true);
+
+/* 演示用的两个入口：不带参数时从登录页开始 */
+/* 上次登录过的号自动填上 —— 每天重输 11 位数字太烦 */
+try {
+  const last = (Android.phone && Android.phone()) || '';
+  if(last && !$('iPhone').value) $('iPhone').value = last;
+} catch(e){}
+
+/* 水滴先从一个点长出来（原来一进来就是完整一个） */
+const pwrap = document.querySelector('.plwrap');
+if(pwrap){
+  pwrap.classList.add('birth');
+  /* 播完就撤 class，好让原本的 breathe 呼吸动画接着跑 */
+  setTimeout(() => pwrap.classList.remove('birth'), 820);
+}
+
+setStep('login');
+/* 已经登录过就直接进列表，不用每次重登一遍。
+   结果从 window.onHasToken 回来 —— 原生在后台线程验，页面不冻。 */
+window.onHasToken = v => {
+  /* '?' = 网络没通，但 token 还在。这时也得进列表页 ——
+     把人停在登录页，他会以为掉登录了，跑去重新发验证码，
+     而每日短信额度就那么多。 */
+  if(v === '1' || v === '?') showDevList();
+};
+Android.hasToken();
+
+/* 安卓返回键先问网页：子页面开着就先收起子页面 */
+window.onBack = () => {
+  if($('acctBox').classList.contains('on')){ $('bAcctNo').click(); return 'handled'; }
+  if($('manual').classList.contains('on')){ $('bSnNo').click(); return 'handled'; }
+  if($('pSummary').classList.contains('on')){ $('bkS').click(); return 'handled'; }
+  if($('pScan').classList.contains('on')){ closeScan(); return 'handled'; }
+  if($('pWater').classList.contains('on')){ $('bk').click(); return 'handled'; }
+  return 'exit';
+};
+
+/* 演示用：切到空状态，看看那只睡觉的水滴 */
+$('demoEmpty').addEventListener('click', () => {
+  const p = $('pOrder'), on = !p.classList.contains('empty');
+  p.classList.toggle('empty', on);
+  $('demoEmpty').textContent = on ? '回到有订单的样子' : '看空状态';
+  if(on){
+    document.querySelectorAll('.tb').forEach(o => {
+      const t = +o.dataset.t === 1;
+      o.classList.toggle('on', t);
+    });
+    curTab = 1;
+    $('pDev').classList.add('hide');
+    $('pOrder').classList.remove('hide');
+    setStep('order');
+  }
+});
+
+/* ══════════════ 接水页 ══════════════ */
+const wrap = $('wrap'), msg = $('msg'), halo = $('halo');
+const bUnlock = $('bUnlock'), bEnd = $('bEnd');
+let busy = false, done = false, timers = [];
+
+function clearTimers(){ timers.forEach(clearTimeout); timers = [] }
+function at(ms, fn){ timers.push(setTimeout(fn, ms)) }
+
+function setLabel(btn, text){
+  btn.classList.add('swapping');
+  at(140, () => { btn.querySelector('.lb').textContent = text; btn.classList.remove('swapping') });
+}
+
+function openWater(i){
+  setStep('water');
+  curDev = i;
+  $('mDev').textContent = DEV[i].name;
+  reset();
+  const card = document.querySelectorAll('.dcard')[i];
+  lastCard = card;
+  $('pWater').classList.add('entering');     /* 先摆好入场初始态 */
+  expandFrom(card, () => {
+    $('pDev').classList.add('hide');
+    $('pWater').classList.add('on');
+    /* 两帧之后才去掉 entering,否则浏览器会把"初始态"和"目标态"合并,动画不播 */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('pWater').classList.remove('entering');
+    }));
+  }, 'pWater');
+}
+
+function reset(){
+  clearTimers(); busy = false; done = false;
+  wrap.className = 'stagewrap';
+  msg.classList.remove('lit');
+  halo.classList.remove('lit');
+  $('mBig').textContent = '设备已锁定';
+  $('mSm').textContent  = '解锁后机器上的按钮才会生效,解锁本身不扣费';
+  $('burst').classList.remove('go');
+  bUnlock.querySelector('.lb').textContent = '解锁设备';
+  bUnlock.disabled = false;
+  bEnd.disabled = true;
+}
+
+/* 一条时间轴 —— 每一步都接在下一步上 */
+bUnlock.addEventListener('click', () => {
+  if(busy || done) return;
+
+  if(DEV[curDev].off){
+    bUnlock.classList.add('swapping');
+    toast('这台设备离线了');
+    timers.push(setTimeout(() => bUnlock.classList.remove('swapping'), 160));
+    return;
+  }
+
+  busy = true;
+  bUnlock.disabled = true;
+  setLabel(bUnlock, '正在解锁…');
+
+  /* ⚠️ 解锁只开机器、**不出水**（出水靠人在机器上按）；口子一开谁按都记本账号。
+     演示模式下绝对不能走到这儿 —— 解锁了机器，之后谁按都算这个账号。 */
+  if(demoMode){
+    setTimeout(() => window.onUnlock && window.onUnlock('{"ok":true,"orderNo":"DEMO"}'), 300);
+  } else {
+    Android.unlock(DEV[curDev].skuId);
+  }
+});
+
+window.onUnlock = raw => {
+  const r = fromNative(() => raw, '解锁');
+  if(!r.ok){
+    busy = false;
+    bUnlock.disabled = false;
+    setLabel(bUnlock, '解锁设备');
+    toast(r.msg || '解锁失败');
+    return;
+  }
+  runUnlockAnim();
+};
+
+function runUnlockAnim(){
+  /* 0ms —— 睁眼 + 锁抖三下 */
+  wrap.classList.add('waking');
+  /* 150ms —— 圆环开始收 */
+  /* 500ms —— 亮点起跑 */
+  /* 1050ms —— 环收满、亮点到终点 */
+
+  /* 1350ms —— 弹开 + 炸开 */
+  at(1330, () => {
+    wrap.classList.remove('waking');
+    wrap.classList.add('done');
+
+    /* 8 道放射线,方向均分 + 轻微抖动,延迟 22ms 一道 */
+    const b = $('burst');
+    [...b.querySelectorAll('.ray')].forEach((d, i) => {
+      const a = i * 45 + (Math.random() * 16 - 8);
+      d.style.setProperty('--a', a.toFixed(1) + 'deg');
+      d.style.setProperty('--dl', (i * 22) + 'ms');
+    });
+    b.classList.add('go');
+
+    done = true;
+    toast('解锁成功 · 请在出水口点按开始');
+  });
+
+  /* 1500ms —— 文字换掉,变成"已解锁" */
+  at(1500, () => {
+    msg.classList.add('lit');
+    $('mBig').textContent = '已解锁';
+    $('mSm').textContent  = '现在到机器上按接水按钮,接完点下面的「结束接水」';
+    halo.classList.add('lit');
+    setLabel(bUnlock, '已解锁');
+    bEnd.disabled = false;
+  });
+}
+
+bEnd.addEventListener('click', () => {
+  bEnd.disabled = true;
+  /* 界面先锁回去，不干等网络。 */
+  clearTimers();
+  at(260, reset);
+  /* 等结算落地再拉，不然拉回来的是旧列表 */
+  setTimeout(loadOrders, 1500);
+  setTimeout(loadDevices, 1500);
+  /* 但接口必须发 —— 不调这个，机器那头一直保持解锁态：
+     界面上的锁是回去了，机器没锁。 */
+  if(!demoMode) Android.endWater(DEV[curDev].goodsId);
+});
+
+window.onEndWater = raw => {
+  const r = fromNative(() => raw, '结束接水');
+  toast(r.ok ? '已结束接水' : (r.msg || '没通知到机器，你到机器上按一下'));
+  /* 刚接过水，强制拉一次 —— 否则缓存没到期，新单子不会出现 */
+  loadOrders(true);
+};
+
+/* 返回 */
+$('bk').addEventListener('click', () => {
+  collapseTo(() => {
+    $('pWater').classList.remove('on');
+    $('pDev').classList.remove('hide');
+    reset();
+  });
+  /* 直接返回（没点「结束接水」）也强制刷一次 —— 水是接过了的 */
+  loadOrders(true);
+  loadDevices();
+});
+</script>
+</body>
+</html>

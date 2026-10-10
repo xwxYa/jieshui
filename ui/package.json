@@ -1,0 +1,13 @@
+{
+  "name": "jieshui-ui",
+  "private": true,
+  "type": "module",
+  "description": "界面设计稿 + 生成脚本 + 自动测试",
+  "scripts": {
+    "build": "python3 build_app.py",
+    "test": "node test_prototype.mjs && node test_regress.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

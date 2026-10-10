@@ -1,0 +1,52 @@
+# ── 能重新生成的，一律不进仓库 ──────────────────────────
+app/build/
+app/app/build/
+app/.gradle/
+build/
+.gradle/
+*.apk
+*.aab
+
+# ── 跑测试、试做原型时生成的临时产物（正式截图在 ui/shots/ 里）──
+ui/_*.png
+ui/_*.mjs
+ui/_*.html
+
+# ── Python / Node ───────────────────────────────────────
+__pycache__/
+*.pyc
+node_modules/
+
+# ── 临时 ────────────────────────────────────────────────
+*.tmp
+*.log
+token.txt
+# qiekj.py 每次调接口都会把结果落盘到这份文件里(verify 的返回里就带 token)
+tools/last_result.json
+
+# app/local.properties —— 本机 SDK 路径，里面带用户名（/home/xxx/...），
+# 不进仓库。clone 后自己建一份：
+#   echo "sdk.dir=$PWD/toolchain/android-sdk" > app/local.properties
+local.properties
+
+# 工具链（SDK + Gradle，628MB，随时能重装，不进 git）
+toolchain/
+
+# 抓包产物（含 token 明文，禁止入库）
+flows.jsonl
+ref/flows-qiekj.jsonl
+
+# ── 不随仓库发布（本地开发用，含大量内部细节）────────────────
+# AGENTS.md 是给 AI 的工作说明，PLAN.md 是给自己看的计划，
+# MOTION.md 是动效笔记。都留在本地，不上传。
+AGENTS.md
+docs/PLAN.md
+docs/MOTION.md
+
+# ── 编辑器 / 系统的临时文件 ──────────────────────────────
+*.TMP
+*~RF*
+*.swp
+*~
+.DS_Store
+Thumbs.db

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="ui/icon.png" width="150">
+  <img src="docs/icon.png" width="150">
 </p>
 
 # 接水
@@ -11,21 +11,26 @@
 这个项目只干两件事：**接水、看账单。**
 
 <p align="center">
-  <img src="ui/shots/01-登录页.png" width="23%">
-  <img src="ui/shots/02-设备列表.png" width="23%">
-  <img src="ui/shots/04-已解锁.png" width="23%">
-  <img src="ui/shots/06-订单.png" width="23%">
+  <img src="docs/shots/01-登录页.png" width="23%">
+  <img src="docs/shots/02-设备列表.png" width="23%">
+  <img src="docs/shots/04-已解锁.png" width="23%">
+  <img src="docs/shots/06-订单.png" width="23%">
 </p>
 
 ## 构建
 
-需要 JDK 17、Android SDK 34、Gradle 8.7。
+纯原生 Kotlin + Jetpack Compose 实现，需要 JDK 17、Android SDK 34、Gradle 8.9。
 
 ```bash
-cd app
-echo "sdk.dir=$PWD/../toolchain/android-sdk" > local.properties
-gradle -q assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+echo "sdk.dir=/path/to/android-sdk" > local.properties
+./gradlew assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+单元测试：
+
+```bash
+./gradlew testDebugUnitTest
 ```
 
 ## 关于

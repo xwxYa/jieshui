@@ -1,0 +1,2 @@
+-keep class com.qiekj.hotwater.data.model.** { *; }
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod

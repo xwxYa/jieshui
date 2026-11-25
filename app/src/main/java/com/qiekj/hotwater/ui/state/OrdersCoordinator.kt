@@ -54,15 +54,27 @@ class OrdersCoordinator(
                 _state.update { it.copy(ordersLoading = true) }
             }
 
-            val all = ArrayList<OrderItem>()
+            val existing = cached.orEmpty()
+            val knownKeys = existing.mapTo(HashSet(existing.size)) { OrdersCache.orderKey(it) }
+            val canEarlyStop = !userInitiated && ordersCache.hasCompletedFullSync() && knownKeys.isNotEmpty()
+            val incoming = ArrayList<OrderItem>()
             var page = 1
             var interrupted = false
+            var reachedEnd = false
             while (page <= 60) {
                 when (val r = api.fetchOrdersPage(page = page, size = 100)) {
                     is ApiResult.Success -> {
-                        if (r.data.isEmpty()) break
-                        all += r.data
-                        if (r.data.size < 100) break
+                        if (r.data.isEmpty()) {
+                            reachedEnd = true
+                            break
+                        }
+                        incoming += r.data
+                        if (r.data.size < 100) {
+                            reachedEnd = true
+                            break
+                        }
+                        val allKnown = canEarlyStop && r.data.all { OrdersCache.orderKey(it) in knownKeys }
+                        if (allKnown) break
                         page++
                     }
                     ApiResult.AuthExpired,
@@ -75,20 +87,27 @@ class OrdersCoordinator(
             }
 
             _state.update { it.copy(ordersLoading = false, ordersRefreshing = false) }
-            if (interrupted) {
-                if (cached == null) {
-                    applyOrders(emptyList())
-                } else if (force) {
-                    showToast("网络波动，当前展示本地缓存账单")
+            if (incoming.isEmpty()) {
+                if (interrupted) {
+                    if (cached == null) {
+                        applyOrders(emptyList())
+                    } else if (force) {
+                        showToast("网络波动，当前展示本地归档账单")
+                    }
+                } else {
+                    if (reachedEnd) ordersCache.markFullSyncCompleted()
+                    if (cached == null) applyOrders(emptyList())
                 }
                 return@launch
             }
-            if (all.isEmpty()) {
-                if (cached == null) applyOrders(emptyList())
-                return@launch
+            val merged = ordersCache.mergeAndWrite(incoming)
+            if (reachedEnd && !interrupted) {
+                ordersCache.markFullSyncCompleted()
             }
-            ordersCache.write(all)
-            applyOrders(all)
+            applyOrders(merged)
+            if (interrupted && force) {
+                showToast("已合并最新账单，部分历史页稍后再同步")
+            }
         }
     }
 

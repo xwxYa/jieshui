@@ -23,7 +23,10 @@ class HotWaterApp : Application() {
     override fun onCreate() {
         super.onCreate()
         localStore = LocalStore(this)
-        ordersCache = OrdersCache(filesDir)
+        ordersCache = OrdersCache(
+            storageDir = filesDir,
+            accountProvider = { localStore.phone }
+        )
         val http = QiekjHttpClient(
             tokenProvider = { localStore.token },
             versionProvider = { localStore.apiVersion }

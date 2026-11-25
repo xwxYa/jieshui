@@ -140,7 +140,7 @@ fun MorphingLockStage(
                 burstProgress.snapTo(0f)
                 launch {
                     ringProgress.snapTo(0f)
-                    ringProgress.animateTo(1f, tween(1050, easing = HotWaterMotion.SwipeEasing))
+                    ringProgress.animateTo(0.92f, tween(840, easing = HotWaterMotion.SwipeEasing))
                 }
                 launch {
                     delay(80)

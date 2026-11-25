@@ -29,6 +29,7 @@ class WaterSessionCoordinator(
     private val bleClient: QiekjBleClient,
     private val isDemoMode: () -> Boolean,
     private val showToast: (String) -> Unit,
+    private val onTokenExpired: () -> Unit = {},
     private val onDeviceWorkStatusChanged: (goodsId: String, workStatus: Int) -> Unit,
     private val onRefreshAfterWater: (refreshOrders: Boolean) -> Unit
 ) {
@@ -109,8 +110,9 @@ class WaterSessionCoordinator(
 
         unlockJob?.cancel()
         unlockJob = scope.launch {
+            val startedAt = System.currentTimeMillis()
             if (isDemoMode()) {
-                delay(1250)
+                delay(880)
                 if (_state.value.device?.goodsId != dev.goodsId) return@launch
                 onUnlockedSuccess(dev.goodsId, UnlockPayload(orderNo = "DEMO"))
                 startDemoPolling(dev.goodsId)
@@ -119,7 +121,9 @@ class WaterSessionCoordinator(
 
             when (val r = api.unlock(dev.skuId)) {
                 is ApiResult.Success -> {
-                    delay(1100)
+                    val elapsed = System.currentTimeMillis() - startedAt
+                    val remain = (880L - elapsed).coerceAtLeast(0L)
+                    if (remain > 0L) delay(remain)
                     if (_state.value.device?.goodsId != dev.goodsId) return@launch
                     onUnlockedSuccess(dev.goodsId, r.data)
                     startRealPolling(dev, initiallySawActive = false)
@@ -127,6 +131,7 @@ class WaterSessionCoordinator(
                 ApiResult.AuthExpired -> {
                     if (_state.value.device?.goodsId == dev.goodsId) {
                         resetToLocked(dev.goodsId, "登录态已失效，请重新登录")
+                        onTokenExpired()
                     }
                 }
                 is ApiResult.ServerError -> {

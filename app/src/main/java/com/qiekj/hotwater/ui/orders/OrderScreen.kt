@@ -22,10 +22,16 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,11 +47,12 @@ fun OrderScreen(
     onRefreshOrders: () -> Unit,
     onSelectYear: (Int) -> Unit,
     onToggleMonth: (Int) -> Unit,
-    onOpenSummary: () -> Unit,
+    onOpenSummary: (Rect?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val stats = ordersState.orderStats
     val activeYear = stats.years.firstOrNull { it.year == ordersState.selectedYear } ?: stats.years.firstOrNull()
+    var summaryBounds by remember { mutableStateOf<Rect?>(null) }
 
     Column(
         modifier = modifier
@@ -86,10 +93,13 @@ fun OrderScreen(
                                 Column(
                                     modifier = Modifier
                                         .weight(1f)
+                                        .onGloballyPositioned { coords ->
+                                            summaryBounds = coords.boundsInRoot()
+                                        }
                                         .clickable(
                                             interactionSource = remember { MutableInteractionSource() },
                                             indication = null,
-                                            onClick = onOpenSummary
+                                            onClick = { onOpenSummary(summaryBounds) }
                                         )
                                 ) {
                                     RollingMoneyText(

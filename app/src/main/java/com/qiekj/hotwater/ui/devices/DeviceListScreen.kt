@@ -43,9 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,8 +71,8 @@ fun DeviceListScreen(
     demoMode: Boolean,
     loggedInPhone: String,
     onRefreshDevices: () -> Unit,
-    onOpenScan: () -> Unit,
-    onOpenWater: (Device) -> Unit,
+    onOpenScan: (Rect?) -> Unit,
+    onOpenWater: (Device, Rect?) -> Unit,
     onReorder: (Int, Int) -> Unit,
     onPersistRemoveDevice: (String) -> Unit,
     onFinalizeRemoveDevice: (String) -> Unit,
@@ -86,6 +89,7 @@ fun DeviceListScreen(
 
     var draggingIndex by remember { mutableIntStateOf(-1) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+    var scanBtnBounds by remember { mutableStateOf<Rect?>(null) }
     val latestDeviceCount by rememberUpdatedState(devicesState.devices.size)
 
     val chevRotation by animateFloatAsState(
@@ -165,10 +169,13 @@ fun DeviceListScreen(
                 Box(
                     modifier = Modifier
                         .size(36.dp)
+                        .onGloballyPositioned { coords ->
+                            scanBtnBounds = coords.boundsInRoot()
+                        }
                         .clip(CircleShape)
                         .clickable {
                             swipedGoodsId = null
-                            onOpenScan()
+                            onOpenScan(scanBtnBounds)
                         },
                     contentAlignment = Alignment.Center
                 ) {
@@ -187,7 +194,7 @@ fun DeviceListScreen(
                 modifier = Modifier.weight(1f)
             ) {
                 if (devicesState.devices.isEmpty()) {
-                    EmptyDevicesCard(onScan = onOpenScan)
+                    EmptyDevicesCard(onScan = { onOpenScan(null) })
                 } else {
                     val density = LocalDensity.current
                     val itemHeightPx = with(density) { 80.dp.toPx() }
@@ -237,11 +244,11 @@ fun DeviceListScreen(
                                 onSwipeStateChange = { open ->
                                     swipedGoodsId = if (open) device.goodsId else if (swipedGoodsId == device.goodsId) null else swipedGoodsId
                                 },
-                                onClick = {
+                                onClick = { bounds ->
                                     if (swipedGoodsId != null) {
                                         swipedGoodsId = null
                                     } else {
-                                        onOpenWater(device)
+                                        onOpenWater(device, bounds)
                                     }
                                 },
                                 onRequestDelete = {

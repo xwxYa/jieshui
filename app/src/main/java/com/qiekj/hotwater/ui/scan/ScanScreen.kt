@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.rounded.FlashlightOff
 import androidx.compose.material.icons.rounded.FlashlightOn
+import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -51,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +79,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.qiekj.hotwater.data.model.Device
 import com.qiekj.hotwater.hardware.scanner.CameraScanController
+import com.qiekj.hotwater.hardware.scanner.ImageQrDecoder
 import com.qiekj.hotwater.ui.ScanLookupState
 import com.qiekj.hotwater.ui.components.MorphButtonState
 import com.qiekj.hotwater.ui.components.MorphingActionButton
@@ -95,12 +99,14 @@ fun ScanScreen(
     onManualSubmit: (String) -> Unit,
     onConfirmAdd: () -> Unit,
     onRescan: () -> Unit,
+    onShowToast: (String) -> Unit,
     onBuzz: (Int, Int) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
 
     var hasCamPermission by remember {
         mutableStateOf(
@@ -120,6 +126,7 @@ fun ScanScreen(
     }
 
     var torchOn by remember { mutableStateOf(false) }
+    var pickingImage by remember { mutableStateOf(false) }
     var bindTick by remember { mutableIntStateOf(0) }
     var showManualDialog by remember { mutableStateOf(false) }
     var manualInput by remember { mutableStateOf("") }
@@ -128,6 +135,25 @@ fun ScanScreen(
     val tapFocusRing = remember { Animatable(0f) }
 
     val controller = remember { CameraScanController(onDecoded = onDecoded) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            pickingImage = true
+            val decoded = try {
+                ImageQrDecoder.decodeFromUri(context, uri)
+            } finally {
+                pickingImage = false
+            }
+            if (!decoded.isNullOrBlank()) {
+                onDecoded(decoded)
+            } else {
+                onShowToast("这张图里没识别到二维码")
+            }
+        }
+    }
 
     // 定时自动续一次中心对焦与中心测光，避免静止举着手机时焦点停在无穷远
     LaunchedEffect(bindTick, scanState, showManualDialog) {
@@ -236,23 +262,6 @@ fun ScanScreen(
                     color = HotWaterColors.OnSurface,
                     modifier = Modifier.padding(start = 4.dp)
                 )
-                Spacer(Modifier.weight(1f))
-                if (hasCamPermission && scanState != ScanLookupState.FOUND) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable { torchOn = controller.toggleTorch() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (torchOn) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
-                            contentDescription = "开关照明",
-                            tint = if (torchOn) HotWaterColors.Primary else HotWaterColors.Muted,
-                            modifier = Modifier.size(21.dp)
-                        )
-                    }
-                }
             }
 
             Column(
@@ -363,12 +372,72 @@ fun ScanScreen(
                 Spacer(Modifier.height(20.dp))
 
                 Text(
-                    text = scanMessage,
+                    text = if (pickingImage) "正在识别图片里的二维码…" else scanMessage,
                     fontSize = 12.5.sp,
                     color = HotWaterColors.Muted
                 )
 
-                Spacer(Modifier.height(6.dp))
+                if (scanState != ScanLookupState.FOUND) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (hasCamPermission) {
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(999.dp))
+                                    .background(if (torchOn) HotWaterColors.Primary else HotWaterColors.Surface)
+                                    .clickable { torchOn = controller.toggleTorch() }
+                                    .padding(horizontal = 16.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (torchOn) Icons.Rounded.FlashlightOn else Icons.Rounded.FlashlightOff,
+                                    contentDescription = "开关照明",
+                                    tint = if (torchOn) Color.White else HotWaterColors.Primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (torchOn) "关闭照明" else "打开照明",
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (torchOn) Color.White else HotWaterColors.OnSurface
+                                )
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(HotWaterColors.Surface)
+                                .clickable(enabled = !pickingImage) {
+                                    photoPickerLauncher.launch(
+                                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                    )
+                                }
+                                .padding(horizontal = 16.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.PhotoLibrary,
+                                contentDescription = "相册导入",
+                                tint = HotWaterColors.Primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "相册选码",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = HotWaterColors.OnSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(

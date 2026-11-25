@@ -83,6 +83,7 @@ class HotWaterViewModel(
         bleClient = bleClient,
         isDemoMode = { _shell.value.demoMode },
         showToast = ::showToast,
+        onTokenExpired = { handleTokenExpired() },
         onDeviceWorkStatusChanged = { goodsId, workStatus ->
             devices.updateWorkStatus(goodsId, workStatus)
         },

@@ -38,17 +38,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -76,7 +81,7 @@ internal fun DeviceCardItem(
     isCrushing: Boolean,
     dragY: Float,
     onSwipeStateChange: (Boolean) -> Unit,
-    onClick: () -> Unit,
+    onClick: (Rect?) -> Unit,
     onRequestDelete: () -> Unit,
     onCrushFinished: () -> Unit,
     onDragStart: (Int) -> Unit,
@@ -91,6 +96,7 @@ internal fun DeviceCardItem(
     val latestDragStart by rememberUpdatedState(onDragStart)
     val latestDragDelta by rememberUpdatedState(onDragDelta)
     val latestDragEnd by rememberUpdatedState(onDragEnd)
+    var cardBounds by remember { mutableStateOf<Rect?>(null) }
 
     val entryAlpha = remember(device.goodsId) { Animatable(0f) }
     val entryY = remember(device.goodsId) { Animatable(12f) }
@@ -255,10 +261,13 @@ internal fun DeviceCardItem(
                                 }
                             )
                         }
+                        .onGloballyPositioned { coords ->
+                            cardBounds = coords.boundsInRoot()
+                        }
                         .clickable(
                             interactionSource = cardInteraction,
                             indication = null,
-                            onClick = onClick
+                            onClick = { onClick(cardBounds) }
                         )
                         .padding(horizontal = 17.dp),
                     verticalAlignment = Alignment.CenterVertically
